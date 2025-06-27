@@ -1504,25 +1504,20 @@ function get_role_name($role_level) {
                 <i class="fas fa-times"></i>
             </button>
         </div>
-        <form method="post" action="">
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="newNoteContent">Not İçeriği:</label>
-                    <textarea name="note_content" id="newNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
-                </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="newNoteContent">Not İçeriği:</label>
+                <textarea id="newNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('addNoteModal')">
-                    <i class="fas fa-times"></i> İptal
-                </button>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Kaydet
-                </button>
-            </div>
-            <input type="hidden" name="action" value="save_task_note">
-            <input type="hidden" name="task_id" id="addNoteTaskId" value="">
-            <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
-        </form>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('addNoteModal')">
+                <i class="fas fa-times"></i> İptal
+            </button>
+            <button type="button" class="btn btn-primary" onclick="saveTaskNote()">
+                <i class="fas fa-save"></i> Kaydet
+            </button>
+        </div>
     </div>
 </div>
 
@@ -3861,21 +3856,125 @@ function updatePerPage(newPerPage) {
 
 // Task Notes Functionality
 function showTaskNotes(taskId) {
-    // Navigate to the same page with view_notes parameter
-    const url = new URL(window.location.href);
-    url.searchParams.set('view_notes', taskId);
-    window.location.href = url.toString();
+    fetch(`?action=get_task_notes_ajax&task_id=${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayNotesModal(taskId, data.notes);
+            } else {
+                alert('Notlar yüklenemedi: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Notlar yüklenirken bir hata oluştu.');
+        });
+}
+
+function displayNotesModal(taskId, notes) {
+    const modal = document.getElementById('taskNotesModal');
+    const notesList = document.getElementById('taskNotesList');
+    
+    notesList.innerHTML = '';
+    
+    notes.forEach(note => {
+        const noteDiv = document.createElement('div');
+        noteDiv.className = 'note-item';
+        noteDiv.innerHTML = `
+            <div class="note-header">
+                <strong>${note.created_by_name}</strong>
+                <span class="note-date">${note.created_at_formatted}</span>
+                ${note.can_edit ? `<button onclick="deleteTaskNote(${note.id}, ${taskId})" class="btn-delete-note"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+            <div class="note-content">${note.note_content}</div>
+        `;
+        notesList.appendChild(noteDiv);
+    });
+    
+    modal.dataset.taskId = taskId;
+    modal.style.display = 'flex';
 }
 
 function showAddNoteModal(taskId) {
     const modal = document.getElementById('addNoteModal');
     const textarea = document.getElementById('newNoteContent');
-    const taskIdInput = document.getElementById('addNoteTaskId');
     
     textarea.value = '';
-    taskIdInput.value = taskId;
+    modal.dataset.taskId = taskId;
     modal.style.display = 'flex';
     textarea.focus();
+}
+
+function deleteTaskNote(noteId, taskId) {
+    if (!confirm('Bu notu silmek istediğinizden emin misiniz?')) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('action', 'delete_task_note_ajax');
+    formData.append('note_id', noteId);
+    formData.append('nonce', '<?php echo wp_create_nonce("task_note_nonce"); ?>');
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showTaskNotes(taskId);
+        } else {
+            alert('Not silinemedi: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Not silinirken bir hata oluştu.');
+    });
+}
+
+function saveTaskNote() {
+    const modal = document.getElementById('addNoteModal');
+    const taskId = modal.dataset.taskId;
+    const content = document.getElementById('newNoteContent').value.trim();
+    
+    if (!content) {
+        alert('Lütfen not içeriği giriniz.');
+        return;
+    }
+    
+    if (!taskId) {
+        alert('Görev ID\'si bulunamadı.');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('action', 'save_task_note_ajax');
+    formData.append('task_id', taskId);
+    formData.append('note_content', content);
+    formData.append('nonce', '<?php echo wp_create_nonce("task_note_nonce"); ?>');
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            closeModal('addNoteModal');
+            // Refresh the current notes view if modal is open
+            const notesModal = document.getElementById('taskNotesModal');
+            if (notesModal && notesModal.style.display === 'flex') {
+                showTaskNotes(taskId);
+            }
+        } else {
+            alert('Not kaydedilemedi: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Not kaydedilirken bir hata oluştu.');
+    });
 }
 
 function closeModal(modalId) {
