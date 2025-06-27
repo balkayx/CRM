@@ -38,6 +38,9 @@ if (!function_exists('get_current_user_rep_id')) {
 $current_user_rep_id = get_current_user_rep_id();
 $current_user_id = get_current_user_id();
 
+// Yönetici yetkisini kontrol et (WordPress admin veya insurance_manager)
+$is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
+
 // Handle AJAX requests for task notes
 if (isset($_POST['action']) || isset($_GET['action'])) {
     $action = isset($_POST['action']) ? $_POST['action'] : $_GET['action'];
@@ -167,9 +170,6 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
             break;
     }
 }
-
-// Yönetici yetkisini kontrol et (WordPress admin veya insurance_manager)
-$is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
 
 // --- Role Helper Functions (Adapted from dashboard4365satir.php) ---
 if (!function_exists('is_patron')) {
