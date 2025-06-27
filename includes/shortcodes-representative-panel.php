@@ -63,6 +63,13 @@ function insurance_crm_representative_login_shortcode() {
     }
 
     $login_error = '';
+    $login_info = '';
+    
+    // Handle session timeout information messages
+    if (isset($_GET['login_info'])) {
+        $login_info = sanitize_text_field(urldecode($_GET['login_info']));
+    }
+    
     // Handle new modern error messages
     if (isset($_GET['login_error'])) {
         $login_error = sanitize_text_field(urldecode($_GET['login_error']));
@@ -93,6 +100,10 @@ function insurance_crm_representative_login_shortcode() {
                 <h2><?php echo esc_html($company_name); ?></h2>
                 <h3>Müşteri Temsilcisi Girişi</h3>
             </div>
+            
+            <?php if (!empty($login_info)): ?>
+                <div class="login-info"><?php echo esc_html($login_info); ?></div>
+            <?php endif; ?>
             
             <?php if (!empty($login_error)): ?>
                 <div class="login-error"><?php echo esc_html($login_error); ?></div>
@@ -261,6 +272,24 @@ function insurance_crm_representative_login_shortcode() {
         text-align: center;
         animation: shake 0.3s ease;
         box-shadow: 0 2px 8px rgba(220, 38, 38, 0.1);
+    }
+
+    .login-info {
+        background: #f0f9ff;
+        color: #0369a1;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border-left: 4px solid #0369a1;
+        font-size: 14px;
+        text-align: center;
+        animation: fadeIn 0.3s ease;
+        box-shadow: 0 2px 8px rgba(3, 105, 161, 0.1);
+    }
+
+    @keyframes fadeIn {
+        0% { opacity: 0; transform: translateY(-5px); }
+        100% { opacity: 1; transform: translateY(0); }
     }
 
     @keyframes shake {
@@ -499,18 +528,24 @@ function insurance_crm_representative_login_shortcode() {
             $button.addClass('loading').prop("disabled", true);
             $loading.show();
             
-            // Remove any existing error messages
-            $(".login-error").fadeOut();
+            // Remove any existing error/info messages
+            $(".login-error, .login-info").fadeOut();
             
             // Let the form submit normally to server
             return true;
         });
         
-        // Auto-hide error messages after 5 seconds
+        // Auto-hide error and info messages after 5 seconds
         if ($('.login-error').length > 0) {
             setTimeout(function() {
                 $('.login-error').fadeOut();
             }, 5000);
+        }
+        
+        if ($('.login-info').length > 0) {
+            setTimeout(function() {
+                $('.login-info').fadeOut();
+            }, 8000); // Info messages stay a bit longer
         }
     });
     </script>

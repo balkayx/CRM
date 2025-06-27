@@ -185,6 +185,28 @@ class Insurance_CRM_Activator {
         dbDelta($sql_user_logs);
         dbDelta($sql_system_logs);
         
+        // License validation logs table
+        $table_license_logs = $wpdb->prefix . 'insurance_license_logs';
+        $sql_license_logs = "CREATE TABLE IF NOT EXISTS $table_license_logs (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            user_id int(11) NOT NULL,
+            user_login varchar(60) NOT NULL,
+            license_status varchar(20) NOT NULL,
+            license_key_partial varchar(50) DEFAULT NULL,
+            license_expiry datetime DEFAULT NULL,
+            is_restricted tinyint(1) DEFAULT 0,
+            is_bypassed tinyint(1) DEFAULT 0,
+            validation_result varchar(20) NOT NULL,
+            ip_address varchar(45) DEFAULT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY user_id (user_id),
+            KEY license_status (license_status),
+            KEY validation_result (validation_result),
+            KEY created_at (created_at)
+        ) $charset_collate;";
+        dbDelta($sql_license_logs);
+        
         // Müşteri dosyaları tablosu - eğer yoksa oluştur
         $table_customer_files = $wpdb->prefix . 'insurance_crm_customer_files';
         if($wpdb->get_var("SHOW TABLES LIKE '$table_customer_files'") != $table_customer_files) {

@@ -54,13 +54,19 @@ class Insurance_CRM_License_Manager {
         add_action('wp_ajax_nopriv_validate_license', array($this, 'ajax_validate_license'));
         add_action('wp_login', array($this, 'validate_license_on_login'), 10, 2);
         
-        // Periodic license check (every 4 hours)
+        // Periodic license check (every 60 minutes)
         add_action('insurance_crm_periodic_license_check', array($this, 'perform_periodic_license_check'));
         if (!wp_next_scheduled('insurance_crm_periodic_license_check')) {
-            wp_schedule_event(time(), 'insurance_crm_4_hours', 'insurance_crm_periodic_license_check');
+            wp_schedule_event(time(), 'insurance_crm_60_minutes', 'insurance_crm_periodic_license_check');
         }
         
-        // Add custom cron schedule for 4 hours
+        // Daily license logging (every 24 hours)
+        add_action('insurance_crm_daily_license_log', array($this, 'perform_daily_license_logging'));
+        if (!wp_next_scheduled('insurance_crm_daily_license_log')) {
+            wp_schedule_event(time(), 'daily', 'insurance_crm_daily_license_log');
+        }
+        
+        // Add custom cron schedules
         add_filter('cron_schedules', array($this, 'add_custom_cron_schedules'));
     }
 
@@ -462,9 +468,9 @@ class Insurance_CRM_License_Manager {
      * Add custom cron schedules
      */
     public function add_custom_cron_schedules($schedules) {
-        $schedules['insurance_crm_4_hours'] = array(
-            'interval' => 4 * HOUR_IN_SECONDS,
-            'display' => __('Every 4 Hours (Insurance CRM License Check)')
+        $schedules['insurance_crm_60_minutes'] = array(
+            'interval' => 60 * MINUTE_IN_SECONDS,
+            'display' => __('Every 60 Minutes (Insurance CRM License Check)')
         );
         return $schedules;
     }
@@ -487,11 +493,27 @@ class Insurance_CRM_License_Manager {
         // Perform immediate license check on every login
         $this->perform_license_check();
         
+        // Get license details for logging
+        $license_status = get_option('insurance_crm_license_status', 'inactive');
+        $license_key = get_option('insurance_crm_license_key', '');
+        $license_expiry = get_option('insurance_crm_license_expiry', '');
+        $is_restricted = get_option('insurance_crm_license_access_restricted', false);
+        $is_bypassed = $this->license_api ? $this->license_api->is_license_bypassed() : false;
+        
+        // Log license validation result to database
+        $this->log_license_validation_result($user->ID, array(
+            'user_login' => $user_login,
+            'license_status' => $license_status,
+            'license_key_partial' => !empty($license_key) ? substr($license_key, 0, 8) . '...' : 'None',
+            'license_expiry' => $license_expiry,
+            'is_restricted' => $is_restricted,
+            'is_bypassed' => $is_bypassed,
+            'validation_time' => current_time('mysql'),
+            'ip_address' => $this->get_client_ip()
+        ));
+        
         // If license is invalid or access is restricted, log them out
         if (!$this->can_access_data()) {
-            $license_status = get_option('insurance_crm_license_status', 'inactive');
-            $is_restricted = get_option('insurance_crm_license_access_restricted', false);
-            
             error_log('[LISANS DEBUG] License check failed on login - Status: ' . $license_status . ', Restricted: ' . ($is_restricted ? 'Yes' : 'No'));
             
             // Allow access only to license management for expired/invalid licenses
@@ -499,6 +521,8 @@ class Insurance_CRM_License_Manager {
                 // Don't log them out, but they'll be redirected to license page by access control
                 error_log('[LISANS DEBUG] User will be restricted to license management only');
             }
+        } else {
+            error_log('[LISANS DEBUG] License validation successful for user: ' . $user_login);
         }
     }
 
@@ -709,5 +733,115 @@ class Insurance_CRM_License_Manager {
     public static function deactivation_cleanup() {
         wp_clear_scheduled_hook('insurance_crm_daily_license_check');
         wp_clear_scheduled_hook('insurance_crm_periodic_license_check');
+        wp_clear_scheduled_hook('insurance_crm_daily_license_log');
+    }
+    
+    /**
+     * Perform daily license logging to debug.log
+     */
+    public function perform_daily_license_logging() {
+        $license_info = $this->get_license_info();
+        $timestamp = current_time('Y-m-d H:i:s');
+        
+        $log_entry = "\n[{$timestamp}] INSURANCE CRM DAILY LICENSE STATUS:\n";
+        $log_entry .= "Status: " . $license_info['status'] . "\n";
+        $log_entry .= "License Key: " . (!empty($license_info['key']) ? substr($license_info['key'], 0, 8) . '...' : 'None') . "\n";
+        $log_entry .= "Type: " . $license_info['type'] . "\n";
+        $log_entry .= "Package: " . $license_info['package'] . "\n";
+        $log_entry .= "Expiry: " . $license_info['expiry'] . "\n";
+        $log_entry .= "User Limit: " . $license_info['user_limit'] . "\n";
+        $log_entry .= "Current Users: " . $license_info['current_users'] . "\n";
+        $log_entry .= "In Grace Period: " . ($license_info['in_grace_period'] ? 'Yes' : 'No') . "\n";
+        if ($license_info['in_grace_period']) {
+            $log_entry .= "Grace Days Remaining: " . $license_info['grace_days_remaining'] . "\n";
+        }
+        $log_entry .= "Last Check: " . $license_info['last_check'] . "\n";
+        $log_entry .= "Days Until Expiry: " . $license_info['days_until_expiry'] . "\n";
+        $log_entry .= "----------------------------------------\n";
+        
+        // Write to debug.log
+        $debug_log_path = WP_CONTENT_DIR . '/debug.log';
+        error_log($log_entry, 3, $debug_log_path);
+    }
+    
+    /**
+     * Log license validation result to database
+     */
+    private function log_license_validation_result($user_id, $validation_data) {
+        global $wpdb;
+        
+        // Create license validation logs table if it doesn't exist
+        $this->create_license_logs_table();
+        
+        $table_name = $wpdb->prefix . 'insurance_license_logs';
+        
+        $wpdb->insert(
+            $table_name,
+            array(
+                'user_id' => $user_id,
+                'user_login' => $validation_data['user_login'],
+                'license_status' => $validation_data['license_status'],
+                'license_key_partial' => $validation_data['license_key_partial'],
+                'license_expiry' => $validation_data['license_expiry'],
+                'is_restricted' => $validation_data['is_restricted'] ? 1 : 0,
+                'is_bypassed' => $validation_data['is_bypassed'] ? 1 : 0,
+                'validation_result' => $validation_data['license_status'] === 'active' ? 'success' : 'failed',
+                'ip_address' => $validation_data['ip_address'],
+                'created_at' => $validation_data['validation_time']
+            ),
+            array('%d', '%s', '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%s')
+        );
+    }
+    
+    /**
+     * Create license validation logs table
+     */
+    private function create_license_logs_table() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'insurance_license_logs';
+        
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            user_id int(11) NOT NULL,
+            user_login varchar(60) NOT NULL,
+            license_status varchar(20) NOT NULL,
+            license_key_partial varchar(50) DEFAULT NULL,
+            license_expiry datetime DEFAULT NULL,
+            is_restricted tinyint(1) DEFAULT 0,
+            is_bypassed tinyint(1) DEFAULT 0,
+            validation_result varchar(20) NOT NULL,
+            ip_address varchar(45) DEFAULT NULL,
+            created_at datetime NOT NULL,
+            PRIMARY KEY (id),
+            KEY user_id (user_id),
+            KEY license_status (license_status),
+            KEY validation_result (validation_result),
+            KEY created_at (created_at)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+    
+    /**
+     * Get client IP address
+     */
+    private function get_client_ip() {
+        $ip_keys = array('HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR');
+        
+        foreach ($ip_keys as $key) {
+            if (array_key_exists($key, $_SERVER) === true) {
+                foreach (array_map('trim', explode(',', $_SERVER[$key])) as $ip) {
+                    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false) {
+                        return $ip;
+                    }
+                }
+            }
+        }
+        
+        return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
     }
 }
