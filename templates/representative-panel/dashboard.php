@@ -1406,7 +1406,7 @@ if ($current_view == 'search' && isset($_GET['keyword']) && !empty(trim($_GET['k
             OR TRIM(COALESCE(c.children_tc_identities, '')) LIKE %s
             OR TRIM(COALESCE(c.company_name, '')) LIKE %s
             OR TRIM(COALESCE(c.tax_number, '')) LIKE %s
-            OR TRIM(COALESCE(p.policy_number, '')) LIKE %s
+            OR (TRIM(COALESCE(p.policy_number, '')) LIKE %s AND COALESCE(p.is_deleted, 0) = 0)
         )
     ";
     
@@ -1429,7 +1429,7 @@ if ($current_view == 'search' && isset($_GET['keyword']) && !empty(trim($_GET['k
     
     // Search across all customers without representative filter, with representative info and pagination
     $search_query = "
-        SELECT c.*, p.policy_number, 
+        SELECT c.*, p.policy_number, p.id as policy_id,
                CASE 
                    WHEN TRIM(COALESCE(c.company_name, '')) != '' THEN CONCAT(TRIM(c.company_name), CASE WHEN TRIM(COALESCE(c.tax_number, '')) != '' THEN CONCAT(' - VKN: ', TRIM(c.tax_number)) ELSE '' END)
                    ELSE CONCAT(TRIM(c.first_name), ' ', TRIM(c.last_name))
@@ -1449,7 +1449,7 @@ if ($current_view == 'search' && isset($_GET['keyword']) && !empty(trim($_GET['k
             OR TRIM(COALESCE(c.children_tc_identities, '')) LIKE %s
             OR TRIM(COALESCE(c.company_name, '')) LIKE %s
             OR TRIM(COALESCE(c.tax_number, '')) LIKE %s
-            OR TRIM(COALESCE(p.policy_number, '')) LIKE %s
+            OR (TRIM(COALESCE(p.policy_number, '')) LIKE %s AND COALESCE(p.is_deleted, 0) = 0)
         )
         GROUP BY c.id
         ORDER BY c.first_name ASC
@@ -5367,7 +5367,17 @@ window.addEventListener('resize', function() {
                                             <td><?php echo esc_html($customer->tc_identity); ?></td>
                                             <td><?php echo esc_html($customer->children_names ?: '-'); ?></td>
                                             <td><?php echo esc_html($customer->children_tc_identities ?: '-'); ?></td>
-                                            <td><?php echo esc_html($customer->policy_number ?: '-'); ?></td>
+                                            <td>
+                                                <?php if (!empty($customer->policy_number) && !empty($customer->policy_id)): ?>
+                                                    <a href="?view=policies&action=view&id=<?php echo esc_attr($customer->policy_id); ?>" 
+                                                       class="policy-link" 
+                                                       title="Poliçe detaylarını görüntüle">
+                                                        <?php echo esc_html($customer->policy_number); ?>
+                                                    </a>
+                                                <?php else: ?>
+                                                    -
+                                                <?php endif; ?>
+                                            </td>
                                             <td><?php echo esc_html($customer->representative_name ?: 'Atanmamış'); ?></td>
                                             <td>
                                                 <div class="table-actions">

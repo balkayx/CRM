@@ -92,9 +92,19 @@ if ($is_wp_admin_or_manager) {
 elseif ($user_role_level == 1 || $user_role_level == 2) {
     $can_edit = true;
 }
-// Müdür Yardımcısı (3) tüm görevleri düzenleyebilir
+// Müdür Yardımcısı (3) rolü kontrolü - sadece ekip lideri ise ekip görevlerini düzenleyebilir
 elseif ($user_role_level == 3) {
-    $can_edit = true;
+    // GÜNCELLEME: Müdür Yardımcısı, kendi görevlerini her zaman düzenleyebilir
+    if ($current_user_rep_id == $task->representative_id) {
+        $can_edit = true;
+    }
+    // Eğer aynı zamanda ekip lideri ise, ekibindeki görevleri de düzenleyebilir
+    elseif (function_exists('is_team_leader') && is_team_leader($current_user_id)) {
+        $team_members = get_team_members_ids($current_user_id);
+        if (in_array($task->representative_id, $team_members)) {
+            $can_edit = true;
+        }
+    }
 }
 // Ekip Lideri (4) kendi ekibindeki üyelere atanmış görevleri düzenleyebilir
 elseif ($user_role_level == 4) {
