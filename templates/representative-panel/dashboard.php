@@ -1589,31 +1589,47 @@ include_once __DIR__ . '/loader.php';
 ?>
 
 <!-- Version Notification Modal -->
+<?php 
+$announcement_settings = get_option('insurance_crm_settings', array());
+$announcements = isset($announcement_settings['update_announcements']) ? $announcement_settings['update_announcements'] : array();
+$show_announcements = isset($announcements['enabled']) && $announcements['enabled'];
+$announcement_title = isset($announcements['title']) ? $announcements['title'] : 'Sistem Güncellemeleri';
+$announcement_content = isset($announcements['content']) ? $announcements['content'] : '';
+$announcement_version = isset($announcements['version']) ? $announcements['version'] : '1.8.3';
+?>
+
+<?php if ($show_announcements && !empty($announcement_content)): ?>
 <div id="versionNotificationModal" class="version-modal" style="display: none;">
     <div class="version-modal-content">
         <span class="version-modal-close" onclick="closeVersionModal()">&times;</span>
         <div class="version-modal-header">
-            <h2><i class="fas fa-rocket"></i> Yeni Versiyonda Neler Var? (v1.8.9)</h2>
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                <div></div>
+                <div style="background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 500;">
+                    v<?php echo esc_html($announcement_version); ?>
+                </div>
+                <span class="version-modal-close" onclick="closeVersionModal()">&times;</span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 50%; margin-right: 20px;">
+                    <i class="fas fa-rocket" style="font-size: 40px;"></i>
+                </div>
+                <div>
+                    <h2 style="margin: 0; font-size: 24px; font-weight: 600;"><?php echo esc_html($announcement_title); ?></h2>
+                </div>
+            </div>
         </div>
         <div class="version-modal-body">
-            <div class="version-feature">
-                <h3><i class="fas fa-shield-alt"></i> Detaylı Yetkilendirme Sistemi</h3>
-                <p>Artık yönetici tarafından size atanan yetkilere bağlı olarak işlem yapabileceksiniz. Örneğin, poliçe silme veya müşteri temsilcisi atama gibi yetkileriniz kısıtlanmış olabilir.</p>
-            </div>
-            <div class="version-feature">
-                <h3><i class="fas fa-lock"></i> Gelişmiş Güvenlik</h3>
-                <p>Yetki altyapısı, işlemlerinizi daha güvenli hale getirmek için güncellendi. Patron ve Müdür rolleri tüm kısıtlamalardan muaf tutulurken, diğer roller detaylı yetki kontrolüne tabi olacaktır.</p>
-            </div>
-            <div class="version-feature">
-                <h3><i class="fas fa-plus-circle"></i> Yeni Yetki Kategorileri</h3>
-                <p>Müşteri silme, veri dışa aktarma, toplu işlemler ve silinmiş kayıtları görüntüleme gibi yeni yetki kategorileri eklendi.</p>
-            </div>
+            <?php echo wp_kses_post($announcement_content); ?>
         </div>
         <div class="version-modal-footer">
-            <button onclick="closeVersionModal()" class="version-modal-btn">Anladım, Devam Et</button>
+            <button onclick="closeVersionModal()" class="version-modal-btn">
+                <i class="fas fa-check"></i> Anladım, Devam Et
+            </button>
         </div>
     </div>
 </div>
+<?php endif; ?>
 
 <style>
 .version-modal {
@@ -1723,17 +1739,26 @@ include_once __DIR__ . '/loader.php';
 
 <script>
 function showVersionNotification() {
-    const currentVersion = '1.8.9';
+    <?php if ($show_announcements && !empty($announcement_content)): ?>
+    const currentVersion = '<?php echo esc_js($announcement_version); ?>';
     const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
     
     // Check if this version notification has been viewed
+    <?php if (isset($announcements['show_to_all']) && $announcements['show_to_all']): ?>
+    // Show to all users - don't check localStorage
+    document.getElementById('versionNotificationModal').style.display = 'block';
+    <?php else: ?>
+    // Only show if not viewed before
     if (!localStorage.getItem(viewedKey)) {
         document.getElementById('versionNotificationModal').style.display = 'block';
     }
+    <?php endif; ?>
+    <?php endif; ?>
 }
 
 function closeVersionModal() {
-    const currentVersion = '1.8.9';
+    <?php if ($show_announcements && !empty($announcement_content)): ?>
+    const currentVersion = '<?php echo esc_js($announcement_version); ?>';
     const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
     
     // Mark this version as viewed
@@ -1741,6 +1766,7 @@ function closeVersionModal() {
     
     // Hide modal
     document.getElementById('versionNotificationModal').style.display = 'none';
+    <?php endif; ?>
 }
 
 // Show notification when page loads

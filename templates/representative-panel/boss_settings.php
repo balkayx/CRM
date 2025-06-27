@@ -22,19 +22,19 @@ $current_user = wp_get_current_user();
 global $wpdb;
 
 /**
- * Helper functions to check role-based permissions
+ * Helper functions to check user-based permissions
  */
-if (!function_exists('check_role_permission')) {
-    function check_role_permission($permission, $user_id = null) {
+if (!function_exists('check_user_permission')) {
+    function check_user_permission($permission, $user_id = null) {
         if (!$user_id) {
             $user_id = get_current_user_id();
         }
         
         global $wpdb;
         
-        // Get user's role
+        // Get user's role and individual permissions
         $rep = $wpdb->get_row($wpdb->prepare(
-            "SELECT role FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            "SELECT role, {$permission} FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
             $user_id
         ));
         
@@ -49,65 +49,100 @@ if (!function_exists('check_role_permission')) {
             return true;
         }
         
-        // Get permission settings
-        $settings = get_option('insurance_crm_settings', array());
-        $setting_key = "role_{$role_id}_{$permission}";
+        // For other roles, check individual user permission
+        $permission_value = isset($rep->$permission) ? intval($rep->$permission) : 0;
         
-        return isset($settings['role_permissions'][$setting_key]) && $settings['role_permissions'][$setting_key];
+        return $permission_value === 1;
     }
 }
 
 if (!function_exists('can_change_customer_representative')) {
     function can_change_customer_representative($user_id = null) {
-        return check_role_permission('can_change_customer_representative', $user_id);
+        return check_user_permission('customer_edit', $user_id);
     }
 }
 
 if (!function_exists('can_change_policy_representative')) {
     function can_change_policy_representative($user_id = null) {
-        return check_role_permission('can_change_policy_representative', $user_id);
+        return check_user_permission('policy_edit', $user_id);
     }
 }
 
 if (!function_exists('can_change_task_representative')) {
     function can_change_task_representative($user_id = null) {
-        return check_role_permission('can_change_task_representative', $user_id);
+        // Since task_edit column might not exist, let's use customer_edit as fallback
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        // Check if task_edit column exists
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}insurance_crm_representatives LIKE 'task_edit'");
+        
+        if (!empty($columns)) {
+            return check_user_permission('task_edit', $user_id);
+        } else {
+            // Fallback to customer_edit permission
+            return check_user_permission('customer_edit', $user_id);
+        }
     }
 }
 
 if (!function_exists('can_delete_policy_permission')) {
     function can_delete_policy_permission($user_id = null) {
-        return check_role_permission('can_delete_policy', $user_id);
+        return check_user_permission('policy_delete', $user_id);
     }
 }
 
 if (!function_exists('can_view_deleted_policies')) {
     function can_view_deleted_policies($user_id = null) {
-        return check_role_permission('can_view_deleted_policies', $user_id);
+        // This might need a new column, for now use policy_delete as proxy
+        return check_user_permission('policy_delete', $user_id);
     }
 }
 
 if (!function_exists('can_delete_customer')) {
     function can_delete_customer($user_id = null) {
-        return check_role_permission('can_delete_customer', $user_id);
+        return check_user_permission('customer_delete', $user_id);
     }
 }
 
 if (!function_exists('can_view_deleted_customers')) {
     function can_view_deleted_customers($user_id = null) {
-        return check_role_permission('can_view_deleted_customers', $user_id);
+        // This might need a new column, for now use customer_delete as proxy
+        return check_user_permission('customer_delete', $user_id);
     }
 }
 
 if (!function_exists('can_export_data')) {
     function can_export_data($user_id = null) {
-        return check_role_permission('can_export_data', $user_id);
+        // Check if export_data column exists, fallback to customer_edit
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}insurance_crm_representatives LIKE 'export_data'");
+        
+        if (!empty($columns)) {
+            return check_user_permission('export_data', $user_id);
+        } else {
+            // Fallback to customer_edit permission
+            return check_user_permission('customer_edit', $user_id);
+        }
     }
 }
 
 if (!function_exists('can_bulk_operations')) {
     function can_bulk_operations($user_id = null) {
-        return check_role_permission('can_bulk_operations', $user_id);
+        // Check if bulk_operations column exists, fallback to customer_edit
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}insurance_crm_representatives LIKE 'bulk_operations'");
+        
+        if (!empty($columns)) {
+            return check_user_permission('bulk_operations', $user_id);
+        } else {
+            // Fallback to customer_edit permission
+            return check_user_permission('customer_edit', $user_id);
+        }
     }
 }
 
@@ -227,30 +262,14 @@ if (isset($_POST['submit_settings']) && isset($_POST['settings_nonce']) &&
     elseif ($tab === 'occupations') {
         $settings['occupation_settings']['default_occupations'] = array_map('sanitize_text_field', explode("\n", trim($_POST['default_occupations'])));
     }
-    // Yetki Ayarları
-    elseif ($tab === 'permissions') {
-        $settings['permission_settings']['allow_customer_details_access'] = isset($_POST['allow_customer_details_access']);
-        
-        // Rol bazlı yetki ayarları
-        if (!isset($settings['role_permissions'])) {
-            $settings['role_permissions'] = array();
-        }
-        
-        $roles = [2, 3, 4, 5]; // Müdür, Müdür Yardımcısı, Ekip Lideri, Müşteri Temsilcisi
-        $permissions = [
-            'can_change_customer_representative',
-            'can_change_policy_representative', 
-            'can_change_task_representative',
-            'can_delete_policy',
-            'can_view_deleted_policies'
-        ];
-        
-        foreach ($roles as $role_id) {
-            foreach ($permissions as $permission) {
-                $setting_key = "role_{$role_id}_{$permission}";
-                $settings['role_permissions'][$setting_key] = isset($_POST[$setting_key]);
-            }
-        }
+    // Güncelleme Duyuruları
+    elseif ($tab === 'updates') {
+        $settings['update_announcements']['enabled'] = isset($_POST['enable_announcements']);
+        $settings['update_announcements']['title'] = sanitize_text_field($_POST['announcement_title']);
+        $settings['update_announcements']['content'] = wp_kses_post($_POST['announcement_content']);
+        $settings['update_announcements']['version'] = sanitize_text_field($_POST['announcement_version']);
+        $settings['update_announcements']['show_to_all'] = isset($_POST['show_to_all']);
+        $settings['update_announcements']['last_updated'] = current_time('mysql');
     }
     
     // Ayarları kaydet
@@ -391,8 +410,8 @@ $total_task_types = count($settings['default_task_types']);
                 <li class="<?php echo $active_tab === 'occupations' ? 'active' : ''; ?>" data-tab="occupations">
                     <i class="fas fa-briefcase"></i> Meslekler
                 </li>
-                <li class="<?php echo $active_tab === 'permissions' ? 'active' : ''; ?>" data-tab="permissions">
-                    <i class="fas fa-user-shield"></i> Yetki Ayarları
+                <li class="<?php echo $active_tab === 'updates' ? 'active' : ''; ?>" data-tab="updates">
+                    <i class="fas fa-bullhorn"></i> Güncelleme Duyuruları
                 </li>
             </ul>
         </div>
@@ -823,118 +842,94 @@ $total_task_types = count($settings['default_task_types']);
                     </div>
                 </div>
                 
-                <!-- Yetki Ayarları -->
-                <div class="settings-tab <?php echo $active_tab === 'permissions' ? 'active' : ''; ?>" id="permissions-tab">
+                <!-- Güncelleme Duyuruları -->
+                <div class="settings-tab <?php echo $active_tab === 'updates' ? 'active' : ''; ?>" id="updates-tab">
                     <div class="tab-header">
-                        <h2><i class="fas fa-user-shield"></i> Yetki Ayarları</h2>
-                        <p>Temsilci yetkilerini ve erişim izinlerini yönetin.</p>
+                        <h2><i class="fas fa-bullhorn"></i> Güncelleme Duyuruları</h2>
+                        <p>Kullanıcılara gösterilecek güncellemeler ve duyuruları yönetin.</p>
                     </div>
                     <div class="tab-content">
-                        <div class="permission-section">
-                            <h3><i class="fas fa-eye"></i> Müşteri Detaylarını Görüntüleme</h3>
+                        <div class="update-section">
+                            <h3><i class="fas fa-toggle-on"></i> Duyuru Ayarları</h3>
                             <div class="form-group checkbox-group">
                                 <label class="checkbox-label">
-                                    <input type="checkbox" name="allow_customer_details_access" value="1" 
-                                           <?php checked(isset($settings['permission_settings']['allow_customer_details_access']) && $settings['permission_settings']['allow_customer_details_access']); ?>>
+                                    <input type="checkbox" name="enable_announcements" value="1" 
+                                           <?php checked(isset($settings['update_announcements']['enabled']) && $settings['update_announcements']['enabled']); ?>>
                                     <span class="checkmark"></span>
                                     <div class="checkbox-content">
-                                        <strong>Müşteri Detaylarına Erişim İzni</strong>
-                                        <p><strong>Bu ayar aktif edildiğinde:</strong> Tüm temsilciler yetki seviyesine bakılmaksızın tüm müşterilerin detaylarını görüntüleyebilir, ancak sadece görüşme notu ekleyebilir (müşteri bilgilerini düzenleyemez).</p>
-                                        <p><strong>Bu ayar devre dışı bırakıldığında:</strong> Erişim yetki seviyesine göre sınırlandırılır:
-                                        <br>• <strong>Patron, Müdür, Müdür Yardımcısı:</strong> Tüm müşterileri görebilir
-                                        <br>• <strong>Ekip Lideri:</strong> Sadece ekibindeki temsilcilerin müşterilerini görebilir
-                                        <br>• <strong>Müşteri Temsilcisi:</strong> Sadece kendi müşterilerini ve poliçe müşterilerini görebilir</p>
+                                        <strong>Güncelleme Duyurularını Etkinleştir</strong>
+                                        <p>Bu seçenek aktif edildiğinde, kullanıcılar giriş yaptıklarında güncelleme bildirimi görecekler.</p>
                                     </div>
                                 </label>
                             </div>
                         </div>
                         
-                        <!-- Yeni Granüler Yetki Ayarları -->
-                        <div class="permission-section">
-                            <h3><i class="fas fa-users-cog"></i> Rol Bazlı Yetki Ayarları</h3>
-                            <p class="section-description">Her rol için özel yetkiler belirleyin. Bu ayarlar ilgili modüllerde (müşteri, poliçe, görev yönetimi) uygulanacaktır.</p>
+                        <div class="update-content-section">
+                            <h3><i class="fas fa-edit"></i> Duyuru İçeriği</h3>
                             
-                            <?php
-                            $roles = [
-                                2 => 'Müdür',
-                                3 => 'Müdür Yardımcısı', 
-                                4 => 'Ekip Lideri',
-                                5 => 'Müşteri Temsilcisi'
-                            ];
+                            <div class="form-group">
+                                <label for="announcement_title">Duyuru Başlığı</label>
+                                <input type="text" name="announcement_title" id="announcement_title" class="form-control" 
+                                       value="<?php echo esc_attr(isset($settings['update_announcements']['title']) ? $settings['update_announcements']['title'] : ''); ?>"
+                                       placeholder="Örn: Yeni Özellikler ve Güncellemeler">
+                                <div class="form-hint">Popup penceresinde görünecek başlık</div>
+                            </div>
                             
-                            $permissions = [
-                                'can_change_customer_representative' => 'Müşteri editlerken Temsilci Değiştirebilir',
-                                'can_change_policy_representative' => 'Poliçe editlerken Temsilci Değiştirebilir',
-                                'can_change_task_representative' => 'Görev editlerken Temsilci Değiştirebilir',
-                                'can_delete_policy' => 'Poliçe Silebilir',
-                                'can_view_deleted_policies' => 'Silinmiş Poliçeleri Görebilir',
-                                'can_delete_customer' => 'Müşteri Silebilir',
-                                'can_view_deleted_customers' => 'Silinmiş Müşterileri Görebilir',
-                                'can_export_data' => 'Veri Dışa Aktarabilir',
-                                'can_bulk_operations' => 'Toplu İşlem Yapabilir'
-                            ];
-                            ?>
+                            <div class="form-group">
+                                <label for="announcement_version">Versiyon</label>
+                                <input type="text" name="announcement_version" id="announcement_version" class="form-control" 
+                                       value="<?php echo esc_attr(isset($settings['update_announcements']['version']) ? $settings['update_announcements']['version'] : '1.8.3'); ?>"
+                                       placeholder="Örn: 1.8.3">
+                                <div class="form-hint">Bu versiyonu daha önce gören kullanıcılara tekrar gösterilmeyecek</div>
+                            </div>
                             
-                            <?php foreach ($roles as $role_id => $role_name): ?>
-                            <div class="role-permissions-group">
-                                <h4><i class="fas fa-user-tag"></i> <?php echo esc_html($role_name); ?></h4>
-                                <div class="permissions-grid">
-                                    <?php foreach ($permissions as $perm_key => $perm_label): ?>
-                                    <div class="form-group checkbox-group">
-                                        <label class="checkbox-label">
-                                            <?php 
-                                            $setting_key = "role_{$role_id}_{$perm_key}";
-                                            $is_checked = isset($settings['role_permissions'][$setting_key]) && $settings['role_permissions'][$setting_key];
-                                            ?>
-                                            <input type="checkbox" name="<?php echo esc_attr($setting_key); ?>" value="1" 
-                                                   <?php checked($is_checked); ?>>
-                                            <span class="checkmark"></span>
-                                            <div class="checkbox-content">
-                                                <strong><?php echo esc_html($perm_label); ?></strong>
-                                                <?php
-                                                // Add specific descriptions for certain permissions
-                                                switch ($perm_key) {
-                                                    case 'can_delete_policy':
-                                                        echo '<p class="permission-desc">Bu rol poliçeleri kalıcı olarak silebilir.</p>';
-                                                        break;
-                                                    case 'can_view_deleted_policies':
-                                                        echo '<p class="permission-desc">Bu rol silinmiş poliçeleri görüntüleyebilir ve geri yükleyebilir.</p>';
-                                                        break;
-                                                    case 'can_change_customer_representative':
-                                                        echo '<p class="permission-desc">Müşteri düzenlenirken sorumlu temsilciyi değiştirebilir.</p>';
-                                                        break;
-                                                    case 'can_change_policy_representative':
-                                                        echo '<p class="permission-desc">Poliçe düzenlenirken sorumlu temsilciyi değiştirebilir.</p>';
-                                                        break;
-                                                    case 'can_change_task_representative':
-                                                        echo '<p class="permission-desc">Görev düzenlenirken sorumlu temsilciyi değiştirebilir.</p>';
-                                                        break;
-                                                    case 'can_delete_customer':
-                                                        echo '<p class="permission-desc">Bu rol müşterileri kalıcı olarak silebilir.</p>';
-                                                        break;
-                                                    case 'can_view_deleted_customers':
-                                                        echo '<p class="permission-desc">Bu rol silinmiş müşterileri görüntüleyebilir ve geri yükleyebilir.</p>';
-                                                        break;
-                                                    case 'can_export_data':
-                                                        echo '<p class="permission-desc">Excel ve PDF formatında veri aktarımı yapabilir.</p>';
-                                                        break;
-                                                    case 'can_bulk_operations':
-                                                        echo '<p class="permission-desc">Çoklu seçim yaparak toplu işlemler gerçekleştirebilir.</p>';
-                                                        break;
-                                                }
-                                                ?>
-                                            </div>
-                                        </label>
-                                    </div>
-                                    <?php endforeach; ?>
+                            <div class="form-group">
+                                <label for="announcement_content">Duyuru İçeriği</label>
+                                <textarea name="announcement_content" id="announcement_content" class="form-control" rows="12" placeholder="Yeni özellikler ve güncellemeler hakkında bilgi verin..."><?php 
+                                    echo isset($settings['update_announcements']['content']) ? esc_textarea($settings['update_announcements']['content']) : ''; 
+                                ?></textarea>
+                                <div class="form-hint">
+                                    HTML etiketleri kullanabilirsiniz. Örnek format:
+                                    <br>• <strong>&lt;h3&gt;</strong>Başlık<strong>&lt;/h3&gt;</strong>
+                                    <br>• <strong>&lt;ul&gt;&lt;li&gt;</strong>Liste öğesi<strong>&lt;/li&gt;&lt;/ul&gt;</strong>
+                                    <br>• <strong>&lt;p&gt;</strong>Paragraf<strong>&lt;/p&gt;</strong>
                                 </div>
                             </div>
-                            <?php endforeach; ?>
+                            
+                            <div class="form-group checkbox-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" name="show_to_all" value="1" 
+                                           <?php checked(isset($settings['update_announcements']['show_to_all']) && $settings['update_announcements']['show_to_all']); ?>>
+                                    <span class="checkmark"></span>
+                                    <div class="checkbox-content">
+                                        <strong>Tüm Kullanıcılara Göster</strong>
+                                        <p>Bu seçenek aktif edildiğinde, duyuru tüm kullanıcılara gösterilir. Pasif ise sadece yeni kullanıcılara gösterilir.</p>
+                                    </div>
+                                </label>
+                            </div>
                         </div>
+                        
+                        <?php if (isset($settings['update_announcements']['last_updated'])): ?>
+                        <div class="update-info-section">
+                            <h3><i class="fas fa-info-circle"></i> Son Güncelleme Bilgileri</h3>
+                            <p><strong>Son Güncelleme:</strong> <?php echo date('d.m.Y H:i', strtotime($settings['update_announcements']['last_updated'])); ?></p>
+                            <p><strong>Aktif Versiyon:</strong> <?php echo esc_html($settings['update_announcements']['version'] ?? 'Belirtilmemiş'); ?></p>
+                            <p><strong>Durum:</strong> 
+                                <?php if (isset($settings['update_announcements']['enabled']) && $settings['update_announcements']['enabled']): ?>
+                                    <span style="color: #28a745; font-weight: bold;">Aktif</span>
+                                <?php else: ?>
+                                    <span style="color: #dc3545; font-weight: bold;">Pasif</span>
+                                <?php endif; ?>
+                            </p>
+                        </div>
+                        <?php endif; ?>
                         
                         <div class="form-actions">
                             <button type="submit" name="submit_settings" class="btn-modern btn-save">
-                                <i class="fas fa-save"></i> Ayarları Kaydet
+                                <i class="fas fa-save"></i> Duyuru Ayarlarını Kaydet
+                            </button>
+                            <button type="button" class="btn-modern btn-preview" onclick="previewAnnouncement()">
+                                <i class="fas fa-eye"></i> Önizleme
                             </button>
                         </div>
                     </div>
@@ -1716,4 +1711,56 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+
+// Announcement preview function
+function previewAnnouncement() {
+    const title = document.getElementById('announcement_title').value || 'Önizleme Başlığı';
+    const content = document.getElementById('announcement_content').value || 'Önizleme içeriği...';
+    const version = document.getElementById('announcement_version').value || '1.8.3';
+    
+    // Create modal HTML
+    const modalHTML = `
+        <div id="announcement-preview-modal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+            <div style="background: white; border-radius: 20px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 20px 20px 0 0; text-align: center;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                        <div></div>
+                        <div style="background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 500;">
+                            v${version}
+                        </div>
+                        <button onclick="closeAnnouncementPreview()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 0; line-height: 1;">&times;</button>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                        <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 50%; margin-right: 20px;">
+                            <i class="fas fa-rocket" style="font-size: 40px;"></i>
+                        </div>
+                        <div>
+                            <h2 style="margin: 0; font-size: 24px; font-weight: 600;">${title}</h2>
+                        </div>
+                    </div>
+                </div>
+                <div style="padding: 30px;">
+                    <div style="color: #4a5568; line-height: 1.6; font-size: 16px;">
+                        ${content}
+                    </div>
+                    <div style="margin-top: 30px; text-align: center;">
+                        <button onclick="closeAnnouncementPreview()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; border-radius: 25px; font-size: 16px; font-weight: 500; cursor: pointer; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);">
+                            <i class="fas fa-check"></i> Anladım
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Add modal to body
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+function closeAnnouncementPreview() {
+    const modal = document.getElementById('announcement-preview-modal');
+    if (modal) {
+        modal.remove();
+    }
+}
 </script>

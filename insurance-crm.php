@@ -10,9 +10,9 @@
  * Plugin Name: Insurance CRM
  * Plugin URI: https://github.com/anadolubirlik/insurance-crm
  * Description: Sigorta acenteleri için müşteri, poliçe ve görev yönetim sistemi.
- * Version: 1.8.2
+ * Version: 1.8.3
  * Pagename: insurance-crm.php
- * Page Version: 1.8.2
+ * Page Version: 1.8.3
  * Author: Mehmet BALKAY | Anadolu Birlik
  * Author URI: https://www.balkay.net
  */
@@ -666,6 +666,27 @@ function insurance_crm_check_db_tables() {
     if (empty($uavt_code_exists)) {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}insurance_crm_customers ADD COLUMN uavt_code VARCHAR(50) DEFAULT NULL AFTER address");
         error_log('insurance_crm_customers tablosuna uavt_code sütunu eklendi.');
+    }
+    
+    // User-based permission columns check and add - New in v1.8.3
+    $permission_columns = [
+        'role' => 'INT DEFAULT 5',
+        'customer_edit' => 'TINYINT(1) DEFAULT 1',
+        'customer_delete' => 'TINYINT(1) DEFAULT 0',
+        'policy_edit' => 'TINYINT(1) DEFAULT 1',
+        'policy_delete' => 'TINYINT(1) DEFAULT 0',
+        'task_edit' => 'TINYINT(1) DEFAULT 1',
+        'export_data' => 'TINYINT(1) DEFAULT 0',
+        'bulk_operations' => 'TINYINT(1) DEFAULT 0'
+    ];
+    
+    foreach ($permission_columns as $column_name => $column_definition) {
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}insurance_crm_representatives LIKE '{$column_name}'");
+        
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}insurance_crm_representatives ADD COLUMN {$column_name} {$column_definition} AFTER status");
+            error_log("insurance_crm_representatives tablosuna {$column_name} sütunu eklendi.");
+        }
     }
 }
 
