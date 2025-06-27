@@ -41,7 +41,7 @@ function insurance_crm_representative_dashboard_shortcode() {
 }
 
 /**
- * Müşteri Temsilcisi Login Shortcode
+ * Müşteri Temsilcisi Login Shortcode - Modern Version
  */
 function insurance_crm_representative_login_shortcode() {
     // Admin bar'ı gizle
@@ -63,6 +63,11 @@ function insurance_crm_representative_login_shortcode() {
     }
 
     $login_error = '';
+    // Handle new modern error messages
+    if (isset($_GET['login_error'])) {
+        $login_error = sanitize_text_field(urldecode($_GET['login_error']));
+    }
+    // Legacy error handling for backward compatibility
     if (isset($_GET['login']) && $_GET['login'] === 'failed') {
         $login_error = 'Kullanıcı adı veya şifre hatalı.';
     }
@@ -118,7 +123,7 @@ function insurance_crm_representative_login_shortcode() {
                 </div>
 
                 <div class="form-group">
-                    <button type="submit" name="insurance_crm_login" class="login-button" id="wp-submit">
+                    <button type="submit" name="insurance_crm_modern_login" class="login-button" id="wp-submit">
                         <span class="button-text">Giriş Yap</span>
                         <span class="button-loading" style="display:none;">
                             <i class="dashicons dashicons-update spin"></i>
@@ -129,7 +134,8 @@ function insurance_crm_representative_login_shortcode() {
                     </div>
                 </div>
                 
-                <?php wp_nonce_field('insurance_crm_login', 'insurance_crm_login_nonce'); ?>
+                <?php wp_nonce_field('insurance_crm_modern_login', 'insurance_crm_login_nonce'); ?>
+                <input type="hidden" name="insurance_crm_modern_login" value="1">
             </form>
             
             <div class="login-footer">
@@ -484,16 +490,28 @@ function insurance_crm_representative_login_shortcode() {
             }
         });
 
-        // Form gönderimi - Server-side redirect kullan
+        // Modern form submission - clean server-side processing
         $("#loginform").on("submit", function(e) {
             const $button = $("#wp-submit");
-            $button.addClass('loading').prop("disabled", true);
-            $(".login-loading").show();
-            $(".login-error").remove();
+            const $loading = $(".login-loading");
             
-            // Form'u normal şekilde gönder (AJAX kullanma)
+            // Show loading state
+            $button.addClass('loading').prop("disabled", true);
+            $loading.show();
+            
+            // Remove any existing error messages
+            $(".login-error").fadeOut();
+            
+            // Let the form submit normally to server
             return true;
         });
+        
+        // Auto-hide error messages after 5 seconds
+        if ($('.login-error').length > 0) {
+            setTimeout(function() {
+                $('.login-error').fadeOut();
+            }, 5000);
+        }
     });
     </script>
     <?php
@@ -525,156 +543,9 @@ function hex2rgb($hex) {
     );
 }
 
-// AJAX Login Handler - Düzeltilmiş versiyon
-add_action('wp_ajax_nopriv_insurance_crm_login', 'insurance_crm_handle_login');
-function insurance_crm_handle_login() {
-    check_ajax_referer('insurance_crm_login', 'insurance_crm_login_nonce');
-
-    $credentials = array(
-        'user_login'    => sanitize_text_field($_POST['username']),
-        'user_password' => $_POST['password'],
-        'remember'      => isset($_POST['remember']) && $_POST['remember'] === 'on' ? true : false
-    );
-
-    $user = wp_signon($credentials, false);
-
-    if (is_wp_error($user)) {
-        error_log('Insurance CRM Login Error: ' . $user->get_error_message());
-        wp_send_json_error(array('message' => $user->get_error_message()));
-    } else {
-        if (in_array('administrator', (array)$user->roles)) {
-            wp_send_json_success(array('redirect' => home_url('/boss-panel/')));
-        } elseif (in_array('insurance_representative', (array)$user->roles)) {
-            global $wpdb;
-            
-            // Check representative status in database
-            $status = $wpdb->get_var($wpdb->prepare(
-                "SELECT status FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d",
-                $user->ID
-            ));
-
-            error_log('Insurance CRM Login: User status for ID ' . $user->ID . ' is: ' . ($status ? $status : 'not found'));
-
-            // If user not found in database but has role, create active entry
-            if (!$status) {
-                error_log('Insurance CRM Login: Creating active representative entry for user ID ' . $user->ID);
-                
-                $wpdb->insert(
-                    $wpdb->prefix . 'insurance_crm_representatives',
-                    array(
-                        'user_id' => $user->ID,
-                        'title' => 'Müşteri Temsilcisi',
-                        'phone' => '',
-                        'department' => 'Genel',
-                        'monthly_target' => 0.00,
-                        'status' => 'active',
-                        'created_at' => current_time('mysql'),
-                        'updated_at' => current_time('mysql')
-                    )
-                );
-                
-                $status = 'active';
-            }
-
-            if ($status === 'active') {
-                wp_send_json_success(array('redirect' => home_url('/temsilci-paneli/')));
-            } else {
-                wp_send_json_error(array('message' => 'Hesabınız pasif durumda. Lütfen yöneticiniz ile iletişime geçin.'));
-            }
-        } else {
-            wp_send_json_error(array('message' => 'Bu kullanıcı müşteri temsilcisi veya yönetici değil.'));
-        }
-    }
-
-    wp_die();
-}
-
 // Shortcode'ları kaydet
 add_shortcode('temsilci_dashboard', 'insurance_crm_representative_dashboard_shortcode');
 add_shortcode('temsilci_login', 'insurance_crm_representative_login_shortcode');
-
-// Müşteri temsilcileri için giriş kontrolü ve yönlendirme
-add_filter('login_redirect', 'insurance_crm_login_redirect', 10, 3);
-function insurance_crm_login_redirect($redirect_to, $requested_redirect_to, $user) {
-    if (!is_wp_error($user) && isset($user->roles) && is_array($user->roles)) {
-        if (in_array('administrator', $user->roles)) {
-            return home_url('/boss-panel/');
-        } elseif (in_array('insurance_representative', $user->roles)) {
-            global $wpdb;
-            $status = $wpdb->get_var($wpdb->prepare(
-                "SELECT status FROM {$wpdb->prefix}insurance_crm_representatives 
-                 WHERE user_id = %d",
-                $user->ID
-            ));
-            
-            // If user not found in database but has role, create active entry
-            if (!$status) {
-                $wpdb->insert(
-                    $wpdb->prefix . 'insurance_crm_representatives',
-                    array(
-                        'user_id' => $user->ID,
-                        'title' => 'Müşteri Temsilcisi',
-                        'phone' => '',
-                        'department' => 'Genel',
-                        'monthly_target' => 0.00,
-                        'status' => 'active',
-                        'created_at' => current_time('mysql'),
-                        'updated_at' => current_time('mysql')
-                    )
-                );
-                $status = 'active';
-            }
-            
-            if ($status === 'active') {
-                return home_url('/temsilci-paneli/');
-            } else {
-                return add_query_arg('login', 'inactive', home_url('/temsilci-girisi/'));
-            }
-        }
-    }
-    
-    return $redirect_to;
-}
-
-// Kullanıcı giriş hatalarını yakala
-add_filter('authenticate', 'insurance_crm_check_representative_status', 30, 3);
-function insurance_crm_check_representative_status($user, $username, $password) {
-    if (!is_wp_error($user) && $username && $password) {
-        if (in_array('insurance_representative', (array)$user->roles)) {
-            global $wpdb;
-            $status = $wpdb->get_var($wpdb->prepare(
-                "SELECT status FROM {$wpdb->prefix}insurance_crm_representatives 
-                 WHERE user_id = %d",
-                $user->ID
-            ));
-            
-            // If user not found in database but has role, create active entry
-            if (!$status) {
-                $wpdb->insert(
-                    $wpdb->prefix . 'insurance_crm_representatives',
-                    array(
-                        'user_id' => $user->ID,
-                        'title' => 'Müşteri Temsilcisi',
-                        'phone' => '',
-                        'department' => 'Genel',
-                        'monthly_target' => 0.00,
-                        'status' => 'active',
-                        'created_at' => current_time('mysql'),
-                        'updated_at' => current_time('mysql')
-                    )
-                );
-                $status = 'active';
-            }
-            
-            if ($status !== 'active') {
-                error_log('Insurance CRM Authenticate Error: Representative status is not active for user ID ' . $user->ID);
-                return new WP_Error('account_inactive', '<strong>HATA</strong>: Hesabınız pasif durumda. Lütfen yöneticiniz ile iletişime geçin.');
-            }
-        }
-    }
-    
-    return $user;
-}
 
 // Frontend dosyalarını ekle
 function insurance_crm_rep_panel_assets() {
