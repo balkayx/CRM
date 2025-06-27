@@ -192,7 +192,10 @@ function force_update_crm_db() {
     
     // **NEW**: Ensure task notes table exists
     $task_notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
-    if ($wpdb->get_var("SHOW TABLES LIKE '$task_notes_table'") != $task_notes_table) {
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$task_notes_table'");
+    error_log("Checking task_notes table: Looking for '$task_notes_table', found: " . ($table_exists ? $table_exists : 'NONE'));
+    
+    if ($table_exists != $task_notes_table) {
         $charset_collate = $wpdb->get_charset_collate();
         $sql_task_notes = "CREATE TABLE $task_notes_table (
             id bigint(20) NOT NULL AUTO_INCREMENT,
@@ -207,8 +210,20 @@ function force_update_crm_db() {
         ) $charset_collate;";
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
-        dbDelta($sql_task_notes);
-        error_log('insurance_crm_task_notes table created in force_update_crm_db()');
+        $result = dbDelta($sql_task_notes);
+        error_log('insurance_crm_task_notes table creation attempted. Result: ' . print_r($result, true));
+        
+        // If dbDelta failed, try direct creation
+        $table_exists_after = $wpdb->get_var("SHOW TABLES LIKE '$task_notes_table'");
+        if (!$table_exists_after) {
+            error_log('dbDelta failed, trying direct SQL creation');
+            $direct_result = $wpdb->query($sql_task_notes);
+            error_log('Direct SQL creation result: ' . ($direct_result !== false ? 'SUCCESS' : 'FAILED'));
+        }
+        
+        // Final re-check
+        $table_exists_final = $wpdb->get_var("SHOW TABLES LIKE '$task_notes_table'");
+        error_log("Final check: " . ($table_exists_final ? $table_exists_final : 'STILL MISSING'));
     }
 }
 // Her sayfa yüklendiğinde bu fonksiyonu çalıştır - böylece sütunların varlığından emin oluruz

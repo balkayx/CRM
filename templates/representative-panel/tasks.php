@@ -48,6 +48,14 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                 $task_id = intval($_GET['task_id']);
                 $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
                 
+                // Check if table exists
+                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                if ($table_exists != $notes_table) {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => 'Notlar tablosu bulunamadı.', 'notes' => []]);
+                    exit;
+                }
+                
                 $notes = $wpdb->get_results($wpdb->prepare("
                     SELECT tn.*, u.display_name as created_by_name 
                     FROM $notes_table tn 
@@ -56,13 +64,19 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                     ORDER BY tn.created_at DESC
                 ", $task_id));
                 
-                foreach ($notes as $note) {
-                    $note->can_edit = ($note->created_by == $current_user_id || $is_wp_admin_or_manager);
-                    $note->created_at = date('d.m.Y H:i', strtotime($note->created_at));
+                if ($notes) {
+                    foreach ($notes as $note) {
+                        $note->can_edit = ($note->created_by == $current_user_id || $is_wp_admin_or_manager);
+                        $note->created_at = date('d.m.Y H:i', strtotime($note->created_at));
+                    }
                 }
                 
                 header('Content-Type: application/json');
-                echo json_encode(['success' => true, 'notes' => $notes]);
+                echo json_encode(['success' => true, 'notes' => $notes ? $notes : []]);
+                exit;
+            } else {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Görev ID eksik.', 'notes' => []]);
                 exit;
             }
             break;
@@ -73,6 +87,14 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                     $task_id = intval($_POST['task_id']);
                     $note_content = sanitize_textarea_field($_POST['note_content']);
                     $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                    
+                    // Check if table exists before attempting insert
+                    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                    if ($table_exists != $notes_table) {
+                        header('Content-Type: application/json');
+                        echo json_encode(['success' => false, 'message' => 'Notlar tablosu bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.']);
+                        exit;
+                    }
                     
                     $result = $wpdb->insert(
                         $notes_table,
@@ -85,10 +107,25 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                         array('%d', '%s', '%d', '%s')
                     );
                     
+                    if ($result === false) {
+                        error_log('Task note insert failed. Last error: ' . $wpdb->last_error);
+                    }
+                    
                     header('Content-Type: application/json');
-                    echo json_encode(['success' => $result !== false, 'message' => $result ? 'Not başarıyla kaydedildi.' : 'Not kaydedilemedi.']);
+                    echo json_encode([
+                        'success' => $result !== false, 
+                        'message' => $result ? 'Not başarıyla kaydedildi.' : 'Not kaydedilemedi. Hata: ' . $wpdb->last_error
+                    ]);
+                    exit;
+                } else {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => 'Güvenlik doğrulaması başarısız.']);
                     exit;
                 }
+            } else {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Gerekli parametreler eksik.']);
+                exit;
             }
             break;
             
@@ -97,6 +134,14 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                 if (wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
                     $note_id = intval($_POST['note_id']);
                     $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                    
+                    // Check if table exists
+                    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                    if ($table_exists != $notes_table) {
+                        header('Content-Type: application/json');
+                        echo json_encode(['success' => false, 'message' => 'Notlar tablosu bulunamadı.']);
+                        exit;
+                    }
                     
                     // Check if user can delete this note
                     $note = $wpdb->get_row($wpdb->prepare("SELECT created_by FROM $notes_table WHERE id = %d", $note_id));
@@ -109,7 +154,15 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                         echo json_encode(['success' => false, 'message' => 'Bu notu silme yetkiniz yok.']);
                     }
                     exit;
+                } else {
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'message' => 'Güvenlik doğrulaması başarısız.']);
+                    exit;
                 }
+            } else {
+                header('Content-Type: application/json');
+                echo json_encode(['success' => false, 'message' => 'Gerekli parametreler eksik.']);
+                exit;
             }
             break;
     }
@@ -461,59 +514,107 @@ if (!empty($filters['time_filter'])) {
 }
 
 // İSTATİSTİK HESAPLAMALARI
-// Toplam görev sayısı
-$total_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query);
+// Build count query base (without dynamic filters)
+$count_base = "SELECT COUNT(*) FROM $tasks_table t 
+               LEFT JOIN $customers_table c ON t.customer_id = c.id
+               LEFT JOIN $policies_table p ON t.policy_id = p.id
+               LEFT JOIN $representatives_table r ON t.representative_id = r.id
+               LEFT JOIN $users_table u ON r.user_id = u.ID
+               WHERE 1=1";
 
-// Bugünkü görevler
+// Add role-based filtering to count queries
+if ($user_role_level === 1 || $user_role_level === 2 || $user_role_level === 3) {
+    if (!$is_team_view) {
+        $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+    }
+} else if ($user_role_level === 4) {
+    if ($is_team_view) {
+        $team_member_ids = get_team_members_ids(get_current_user_id());
+        if (!empty($team_member_ids)) {
+            $valid_member_ids = array();
+            foreach ($team_member_ids as $member_id) {
+                if (!empty($member_id) && is_numeric($member_id)) {
+                    $valid_member_ids[] = (int) $member_id;
+                }
+            }
+            if (!empty($valid_member_ids)) {
+                $member_placeholders = implode(',', $valid_member_ids);
+                $count_base .= " AND t.representative_id IN ($member_placeholders)";
+            } else {
+                $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+            }
+        } else {
+            $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+        }
+    } else {
+        $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+    }
+} else {
+    $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+}
+
+// Statistics for cards (no show_completed filter)
+$stat_count_base = $count_base;
+
+// Add show_completed filter for main statistics
+if (!$filters['show_completed']) {
+    $count_base .= " AND t.status != 'completed'";
+}
+
+// Apply static filters to count queries
+if (!empty($filters['customer_id'])) {
+    $count_base .= " AND t.customer_id = " . intval($filters['customer_id']);
+    $stat_count_base .= " AND t.customer_id = " . intval($filters['customer_id']);
+}
+if (!empty($filters['priority'])) {
+    $priority_filter = " AND t.priority = '" . esc_sql($filters['priority']) . "'";
+    $count_base .= $priority_filter;
+    $stat_count_base .= $priority_filter;
+}
+if (!empty($filters['status'])) {
+    $status_filter = " AND t.status = '" . esc_sql($filters['status']) . "'";
+    $count_base .= $status_filter;
+    $stat_count_base .= $status_filter;
+}
+
+// Calculate statistics using direct queries (no wpdb::prepare needed for static queries)
 $today_date = date('Y-m-d');
-$today_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) = '" . esc_sql($today_date) . "'");
-
-// Yarınki görevler
 $tomorrow_date = date('Y-m-d', strtotime('+1 day'));
-$tomorrow_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) = '" . esc_sql($tomorrow_date) . "'");
-
-// Bu haftaki görevler
 $week_start = date('Y-m-d', strtotime('monday this week'));
 $week_end = date('Y-m-d', strtotime('sunday this week'));
-$this_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'");
-
-// Gelecek haftaki görevler
 $next_week_start = date('Y-m-d', strtotime('monday next week'));
 $next_week_end = date('Y-m-d', strtotime('sunday next week'));
-$next_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_week_start) . "' AND '" . esc_sql($next_week_end) . "'");
-
-// Bu ayki görevler
 $month_start = date('Y-m-01');
 $month_end = date('Y-m-t');
-$this_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($month_start) . "' AND '" . esc_sql($month_end) . "'");
-
-// Gelecek ayki görevler
 $next_month_start = date('Y-m-01', strtotime('first day of next month'));
 $next_month_end = date('Y-m-t', strtotime('first day of next month'));
-$next_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_month_start) . "' AND '" . esc_sql($next_month_end) . "'");
-
-// Gecikmiş görevler
-$overdue_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) < '" . esc_sql($today_date) . "' AND t.status NOT IN ('completed', 'cancelled')");
-
-// Bu ay eklenen görevler
 $this_month_start_date = date('Y-m-01 00:00:00');
-$created_this_month = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.created_at >= '" . esc_sql($this_month_start_date) . "'");
 
-// Durum bazlı görev sayıları
-// İstatistik kartı için doğru tamamlanan görev sayısı (sadece kullanıcı/ekip kapsamı)
-$completed_tasks_for_stats = $wpdb->get_var("SELECT COUNT(*) " . $stat_base_query . " AND t.status = 'completed'");
-$total_tasks_for_stats = $wpdb->get_var("SELECT COUNT(*) " . $stat_base_query);
+// Execute count queries
+$total_tasks = $wpdb->get_var($count_base);
+$today_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) = '" . esc_sql($today_date) . "'");
+$tomorrow_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) = '" . esc_sql($tomorrow_date) . "'");
+$this_week_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'");
+$next_week_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_week_start) . "' AND '" . esc_sql($next_week_end) . "'");
+$this_month_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($month_start) . "' AND '" . esc_sql($month_end) . "'");
+$next_month_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_month_start) . "' AND '" . esc_sql($next_month_end) . "'");
+$overdue_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) < '" . esc_sql($today_date) . "' AND t.status NOT IN ('completed', 'cancelled')");
+$created_this_month = $wpdb->get_var($count_base . " AND t.created_at >= '" . esc_sql($this_month_start_date) . "'");
 
-// Sayfa filtreleri ile birlikte durum bazlı görev sayıları (grafik için)
-$completed_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'completed'");
-$pending_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'pending'");
-$in_progress_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'in_progress'");
-$cancelled_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'cancelled'");
+// Statistics for cards
+$completed_tasks_for_stats = $wpdb->get_var($stat_count_base . " AND t.status = 'completed'");
+$total_tasks_for_stats = $wpdb->get_var($stat_count_base);
 
-// Öncelik bazlı görev sayıları
-$high_priority_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.priority = 'high'");
-$medium_priority_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.priority = 'medium'");
-$low_priority_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.priority = 'low'");
+// Status counts
+$completed_tasks = $wpdb->get_var($count_base . " AND t.status = 'completed'");
+$pending_tasks = $wpdb->get_var($count_base . " AND t.status = 'pending'");
+$in_progress_tasks = $wpdb->get_var($count_base . " AND t.status = 'in_progress'");
+$cancelled_tasks = $wpdb->get_var($count_base . " AND t.status = 'cancelled'");
+
+// Priority counts
+$high_priority_tasks = $wpdb->get_var($count_base . " AND t.priority = 'high'");
+$medium_priority_tasks = $wpdb->get_var($count_base . " AND t.priority = 'medium'");
+$low_priority_tasks = $wpdb->get_var($count_base . " AND t.priority = 'low'");
 
 // Grafik verileri
 $status_chart_data = array(
@@ -1053,11 +1154,18 @@ function get_role_name($role_level) {
                                         <?php echo esc_html($task->task_title); ?>
                                     </a>
                                     <?php 
-                                    // Check if task has notes
-                                    $note_count = $wpdb->get_var($wpdb->prepare(
-                                        "SELECT COUNT(*) FROM {$wpdb->prefix}insurance_crm_task_notes WHERE task_id = %d",
-                                        $task->id
-                                    ));
+                                    // Check if task has notes (only if table exists)
+                                    $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                                    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                                    $note_count = 0;
+                                    
+                                    if ($table_exists == $notes_table) {
+                                        $note_count = $wpdb->get_var($wpdb->prepare(
+                                            "SELECT COUNT(*) FROM {$notes_table} WHERE task_id = %d",
+                                            $task->id
+                                        ));
+                                    }
+                                    
                                     if ($note_count > 0): ?>
                                         <span class="task-notes-indicator" title="Bu görevde <?php echo $note_count; ?> not bulunuyor" 
                                               onclick="showTaskNotes(<?php echo $task->id; ?>)">
