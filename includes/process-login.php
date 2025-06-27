@@ -1,6 +1,7 @@
 <?php
 function insurance_crm_process_login() {
-    if(isset($_POST['insurance_crm_login'])) {
+    // Handle both underscore and hyphen versions for fallback compatibility
+    if(isset($_POST['insurance_crm_login']) || isset($_POST['insurance-crm-login'])) {
         $username = $_POST['username'];
         $password = $_POST['password'];
         
@@ -17,13 +18,12 @@ function insurance_crm_process_login() {
             exit;
         }
         
-        // Session açılıp açılmadığını kontrol et
+        // Session ve auth cookie ayarla
         wp_set_auth_cookie($user->ID);
         wp_set_current_user($user->ID);
         
-        // Session doğrulaması yap
+        // Session açıldığını doğrula ve sistem anasayfasına yönlendir
         if(is_user_logged_in()) {
-            // Sistem anasayfasına yönlendir
             wp_redirect(home_url('/temsilci-paneli/'));
             exit;
         } else {
