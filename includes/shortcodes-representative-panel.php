@@ -93,7 +93,7 @@ function insurance_crm_representative_login_shortcode() {
                 <div class="login-error"><?php echo esc_html($login_error); ?></div>
             <?php endif; ?>
             
-            <form method="post" class="insurance-crm-login-form" id="loginform">
+            <form method="post" class="insurance-crm-login-form" id="loginform" action="">
                 <div class="form-group">
                     <div class="input-wrapper">
                         <span class="input-icon"><i class="dashicons dashicons-admin-users"></i></span>
@@ -118,7 +118,7 @@ function insurance_crm_representative_login_shortcode() {
                 </div>
 
                 <div class="form-group">
-                    <button type="submit" name="insurance-crm-login" class="login-button" id="wp-submit">
+                    <button type="submit" name="insurance_crm_login" class="login-button" id="wp-submit">
                         <span class="button-text">Giriş Yap</span>
                         <span class="button-loading" style="display:none;">
                             <i class="dashicons dashicons-update spin"></i>
@@ -484,33 +484,15 @@ function insurance_crm_representative_login_shortcode() {
             }
         });
 
-        // Form gönderimi
+        // Form gönderimi - Server-side redirect kullan
         $("#loginform").on("submit", function(e) {
-            e.preventDefault();
             const $button = $("#wp-submit");
             $button.addClass('loading').prop("disabled", true);
             $(".login-loading").show();
             $(".login-error").remove();
-
-            $.ajax({
-                url: '<?php echo admin_url('admin-ajax.php'); ?>',
-                type: 'POST',
-                data: $(this).serialize() + '&action=insurance_crm_login',
-                success: function(response) {
-                    if (response.success) {
-                        window.location.href = response.data.redirect;
-                    } else {
-                        $(".login-header").after('<div class="login-error">' + response.data.message + '</div>');
-                        $button.removeClass('loading').prop("disabled", false);
-                        $(".login-loading").hide();
-                    }
-                },
-                error: function() {
-                    $(".login-header").after('<div class="login-error">Bir hata oluştu, lütfen tekrar deneyin.</div>');
-                    $button.removeClass('loading').prop("disabled", false);
-                    $(".login-loading").hide();
-                }
-            });
+            
+            // Form'u normal şekilde gönder (AJAX kullanma)
+            return true;
         });
     });
     </script>
