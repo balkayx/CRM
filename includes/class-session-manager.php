@@ -129,11 +129,11 @@ class Insurance_CRM_Session_Manager {
         // Logout the user
         wp_logout();
         
-        // Redirect to login page with timeout message
+        // Redirect to custom login panel with timeout message
         $login_url = add_query_arg(array(
             'session_timeout' => '1',
-            'message' => urlencode('Oturumunuz 30 dakika hareketsizlik nedeniyle otomatik olarak sonlandırıldı.')
-        ), wp_login_url());
+            'login_info' => urlencode('Oturumunuz 30 dakika hareketsizlik nedeniyle otomatik olarak sonlandırıldı.')
+        ), home_url('/temsilci-girisi/'));
         
         wp_safe_redirect($login_url);
         exit;
