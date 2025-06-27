@@ -128,6 +128,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
     
+    // Handle note editing
+    elseif (isset($_POST['action']) && $_POST['action'] === 'edit_task_note') {
+        if (isset($_POST['note_id']) && isset($_POST['note_content']) && isset($_POST['nonce'])) {
+            if (wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+                $note_id = intval($_POST['note_id']);
+                $note_content = sanitize_textarea_field($_POST['note_content']);
+                $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                
+                // Check if table exists
+                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                if ($table_exists != $notes_table) {
+                    $notice_message = 'Notlar tablosu bulunamadı.';
+                    $notice_type = 'error';
+                } else {
+                    // Check if user can edit this note
+                    $note = $wpdb->get_row($wpdb->prepare("SELECT created_by FROM $notes_table WHERE id = %d", $note_id));
+                    if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
+                        $result = $wpdb->update(
+                            $notes_table,
+                            array('note_content' => $note_content, 'updated_at' => current_time('mysql')),
+                            array('id' => $note_id),
+                            array('%s', '%s'),
+                            array('%d')
+                        );
+                        if ($result !== false) {
+                            $notice_message = 'Not başarıyla güncellendi.';
+                            $notice_type = 'success';
+                        } else {
+                            $notice_message = 'Not güncellenemedi.';
+                            $notice_type = 'error';
+                        }
+                    } else {
+                        $notice_message = 'Bu notu düzenleme yetkiniz yok.';
+                        $notice_type = 'error';
+                    }
+                }
+            } else {
+                $notice_message = 'Güvenlik doğrulaması başarısız.';
+                $notice_type = 'error';
+            }
+        } else {
+            $notice_message = 'Gerekli parametreler eksik.';
+            $notice_type = 'error';
+        }
+    }
+    
     // Redirect to prevent form resubmission
     if (!empty($notice_message)) {
         $redirect_url = add_query_arg(array(
@@ -1365,14 +1411,19 @@ function get_role_name($role_level) {
                                     <strong><?php echo esc_html($note->created_by_name); ?></strong>
                                     <span class="note-date"><?php echo esc_html($note->created_at_formatted); ?></span>
                                     <?php if ($note->can_edit): ?>
-                                        <form method="post" style="display: inline;" onsubmit="return confirm('Bu notu silmek istediğinizden emin misiniz?');">
-                                            <input type="hidden" name="action" value="delete_task_note">
-                                            <input type="hidden" name="note_id" value="<?php echo $note->id; ?>">
-                                            <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
-                                            <button type="submit" class="btn-delete-note">
-                                                <i class="fas fa-trash"></i>
+                                        <div class="note-actions">
+                                            <button type="button" class="btn-edit-note" onclick="showEditNoteModal(<?php echo $note->id; ?>, '<?php echo esc_js($note->note_content); ?>')">
+                                                <i class="fas fa-edit"></i>
                                             </button>
-                                        </form>
+                                            <form method="post" style="display: inline;" onsubmit="return confirm('Bu notu silmek istediğinizden emin misiniz?');">
+                                                <input type="hidden" name="action" value="delete_task_note">
+                                                <input type="hidden" name="note_id" value="<?php echo $note->id; ?>">
+                                                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+                                                <button type="submit" class="btn-delete-note">
+                                                    <i class="fas fa-trash"></i>
+                                                </button>
+                                            </form>
+                                        </div>
                                     <?php endif; ?>
                                 </div>
                                 <div class="note-content"><?php echo esc_html($note->note_content); ?></div>
@@ -1418,6 +1469,36 @@ function get_role_name($role_level) {
                 </button>
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-save"></i> Kaydet
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="editNoteModal" class="task-modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-edit"></i> Not Düzenle</h3>
+            <button class="modal-close" onclick="closeModal('editNoteModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="post" action="">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="editNoteContent">Not İçeriği:</label>
+                    <textarea name="note_content" id="editNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+                </div>
+                <input type="hidden" name="note_id" id="editNoteId" value="">
+                <input type="hidden" name="action" value="edit_task_note">
+                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editNoteModal')">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Güncelle
                 </button>
             </div>
         </form>
@@ -3074,6 +3155,27 @@ if (isset($_GET['action'])) {
     color: #888;
 }
 
+.note-actions {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.btn-edit-note {
+    background: #ffc107;
+    color: #333;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.2s ease;
+}
+
+.btn-edit-note:hover {
+    background: #e0a800;
+}
+
 .btn-delete-note {
     background: #dc3545;
     color: white;
@@ -3772,6 +3874,17 @@ function showAddNoteModal(taskId) {
     
     textarea.value = '';
     taskIdInput.value = taskId;
+    modal.style.display = 'flex';
+    textarea.focus();
+}
+
+function showEditNoteModal(noteId, noteContent) {
+    const modal = document.getElementById('editNoteModal');
+    const textarea = document.getElementById('editNoteContent');
+    const noteIdInput = document.getElementById('editNoteId');
+    
+    textarea.value = noteContent;
+    noteIdInput.value = noteId;
     modal.style.display = 'flex';
     textarea.focus();
 }
