@@ -69,7 +69,9 @@ function temsilci_panel_shortcode() {
         </div>
         <div class="login-form">
             <h2 style="color: #2c3e50; text-align: center; margin-bottom: 20px; font-size: 22px;">Müşteri Temsilcisi Girişi</h2>
-            <form action="#" method="post" id="temsilci-login-form">
+            <form action="" method="post" id="temsilci-login-form">
+                <?php wp_nonce_field('insurance_crm_login', 'insurance_crm_login_nonce'); ?>
+                <input type="hidden" name="insurance_crm_login" value="1">
                 <div class="form-group" style="margin-bottom: 20px;">
                     <label for="username" style="display: block; margin-bottom: 5px; color: #555; font-weight: 500;">Kullanıcı Adı</label>
                     <input type="text" id="username" name="username" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;">
@@ -92,18 +94,24 @@ function temsilci_panel_shortcode() {
     
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        document.getElementById('temsilci-login-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            
-            // Basit bir demo giriş kontrolü - gerçekte sunucuda doğrulanmalıdır
-            if(username === 'demo' && password === 'demo123') {
-                alert('Başarıyla giriş yaptınız! Dashboard hazır olduğunda yönlendirileceksiniz.');
-            } else {
-                alert('Geçersiz kullanıcı adı veya şifre.');
-            }
+        const form = document.getElementById('temsilci-login-form');
+        const submitBtn = form.querySelector('.btn-login');
+        
+        // Show loading state during form submission
+        form.addEventListener('submit', function(e) {
+            submitBtn.disabled = true;
+            submitBtn.style.background = '#2c3e50';
+            submitBtn.textContent = 'Giriş yapılıyor...';
         });
+        
+        // Check for login error messages
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('login') === 'failed') {
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = 'background: #e74c3c; color: white; padding: 10px; margin-bottom: 20px; border-radius: 4px; text-align: center;';
+            errorDiv.textContent = 'Geçersiz kullanıcı adı veya şifre. Lütfen tekrar deneyin.';
+            form.parentNode.insertBefore(errorDiv, form);
+        }
     });
     </script>
     <?php

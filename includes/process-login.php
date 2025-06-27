@@ -1,4 +1,12 @@
 <?php
+/**
+ * Legacy login processor - DISABLED
+ * This file is kept for reference but disabled to prevent conflicts.
+ * Login processing is now handled by Insurance_CRM_Auth class.
+ */
+
+/* 
+// Disabled to prevent conflicts with new authentication system
 function insurance_crm_process_login() {
     if(isset($_POST['insurance_crm_login'])) {
         $username = $_POST['username'];
@@ -23,3 +31,4 @@ function insurance_crm_process_login() {
     }
 }
 add_action('init', 'insurance_crm_process_login');
+*/

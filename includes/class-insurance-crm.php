@@ -69,6 +69,7 @@ class Insurance_CRM {
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-insurance-crm-loader.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-insurance-crm-i18n.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-insurance-crm-admin.php';
+        require_once plugin_dir_path(dirname(__FILE__)) . 'includes/class-insurance-crm-auth.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/models/class-insurance-crm-customer.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/models/class-insurance-crm-policy.php';
         require_once plugin_dir_path(dirname(__FILE__)) . 'includes/models/class-insurance-crm-task.php';
