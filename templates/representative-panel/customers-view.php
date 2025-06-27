@@ -393,7 +393,7 @@ if (!$customer) {
     return;
 }
 
-// Müşterinin poliçelerini al
+// Müşterinin poliçelerini al (silinmiş poliçeler hariç)
 $policies_table = $wpdb->prefix . 'insurance_crm_policies';
 $policies = $wpdb->get_results($wpdb->prepare("
     SELECT p.*, u.display_name as representative_name
@@ -401,6 +401,8 @@ $policies = $wpdb->get_results($wpdb->prepare("
     LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON p.representative_id = r.id
     LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
     WHERE p.customer_id = %d
+    AND p.policy_number NOT LIKE 'DEL%'
+    AND (p.is_deleted = 0 OR p.is_deleted IS NULL)
     ORDER BY p.end_date ASC
 ", $customer_id));
 

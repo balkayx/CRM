@@ -21,6 +21,72 @@ if (!is_user_logged_in()) {
 $current_user = wp_get_current_user();
 global $wpdb;
 
+/**
+ * Helper functions to check role-based permissions
+ */
+if (!function_exists('check_role_permission')) {
+    function check_role_permission($permission, $user_id = null) {
+        if (!$user_id) {
+            $user_id = get_current_user_id();
+        }
+        
+        global $wpdb;
+        
+        // Get user's role
+        $rep = $wpdb->get_row($wpdb->prepare(
+            "SELECT role FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            $user_id
+        ));
+        
+        if (!$rep) {
+            return false;
+        }
+        
+        $role_id = intval($rep->role);
+        
+        // Patron (role 1) has all permissions
+        if ($role_id === 1) {
+            return true;
+        }
+        
+        // Get permission settings
+        $settings = get_option('insurance_crm_settings', array());
+        $setting_key = "role_{$role_id}_{$permission}";
+        
+        return isset($settings['role_permissions'][$setting_key]) && $settings['role_permissions'][$setting_key];
+    }
+}
+
+if (!function_exists('can_change_customer_representative')) {
+    function can_change_customer_representative($user_id = null) {
+        return check_role_permission('can_change_customer_representative', $user_id);
+    }
+}
+
+if (!function_exists('can_change_policy_representative')) {
+    function can_change_policy_representative($user_id = null) {
+        return check_role_permission('can_change_policy_representative', $user_id);
+    }
+}
+
+if (!function_exists('can_change_task_representative')) {
+    function can_change_task_representative($user_id = null) {
+        return check_role_permission('can_change_task_representative', $user_id);
+    }
+}
+
+if (!function_exists('can_delete_policy_permission')) {
+    function can_delete_policy_permission($user_id = null) {
+        return check_role_permission('can_delete_policy', $user_id);
+    }
+}
+
+if (!function_exists('can_view_deleted_policies')) {
+    function can_view_deleted_policies($user_id = null) {
+        return check_role_permission('can_view_deleted_policies', $user_id);
+    }
+}
+
 // Yetki kontrolü - patron ve müdür ayarlara erişebilir
 if (!has_full_admin_access($current_user->ID)) {
     wp_die('Bu sayfaya erişim yetkiniz bulunmuyor.');
@@ -140,6 +206,27 @@ if (isset($_POST['submit_settings']) && isset($_POST['settings_nonce']) &&
     // Yetki Ayarları
     elseif ($tab === 'permissions') {
         $settings['permission_settings']['allow_customer_details_access'] = isset($_POST['allow_customer_details_access']);
+        
+        // Rol bazlı yetki ayarları
+        if (!isset($settings['role_permissions'])) {
+            $settings['role_permissions'] = array();
+        }
+        
+        $roles = [2, 3, 4, 5]; // Müdür, Müdür Yardımcısı, Ekip Lideri, Müşteri Temsilcisi
+        $permissions = [
+            'can_change_customer_representative',
+            'can_change_policy_representative', 
+            'can_change_task_representative',
+            'can_delete_policy',
+            'can_view_deleted_policies'
+        ];
+        
+        foreach ($roles as $role_id) {
+            foreach ($permissions as $permission) {
+                $setting_key = "role_{$role_id}_{$permission}";
+                $settings['role_permissions'][$setting_key] = isset($_POST[$setting_key]);
+            }
+        }
     }
     
     // Ayarları kaydet
@@ -738,6 +825,73 @@ $total_task_types = count($settings['default_task_types']);
                             </div>
                         </div>
                         
+                        <!-- Yeni Granüler Yetki Ayarları -->
+                        <div class="permission-section">
+                            <h3><i class="fas fa-users-cog"></i> Rol Bazlı Yetki Ayarları</h3>
+                            <p class="section-description">Her rol için özel yetkiler belirleyin. Bu ayarlar ilgili modüllerde (müşteri, poliçe, görev yönetimi) uygulanacaktır.</p>
+                            
+                            <?php
+                            $roles = [
+                                2 => 'Müdür',
+                                3 => 'Müdür Yardımcısı', 
+                                4 => 'Ekip Lideri',
+                                5 => 'Müşteri Temsilcisi'
+                            ];
+                            
+                            $permissions = [
+                                'can_change_customer_representative' => 'Müşteri editlerken Temsilci Değiştirebilir',
+                                'can_change_policy_representative' => 'Poliçe editlerken Temsilci Değiştirebilir',
+                                'can_change_task_representative' => 'Görev editlerken Temsilci Değiştirebilir',
+                                'can_delete_policy' => 'Poliçe Silebilir',
+                                'can_view_deleted_policies' => 'Silinmiş Poliçeleri Görebilir'
+                            ];
+                            ?>
+                            
+                            <?php foreach ($roles as $role_id => $role_name): ?>
+                            <div class="role-permissions-group">
+                                <h4><i class="fas fa-user-tag"></i> <?php echo esc_html($role_name); ?></h4>
+                                <div class="permissions-grid">
+                                    <?php foreach ($permissions as $perm_key => $perm_label): ?>
+                                    <div class="form-group checkbox-group">
+                                        <label class="checkbox-label">
+                                            <?php 
+                                            $setting_key = "role_{$role_id}_{$perm_key}";
+                                            $is_checked = isset($settings['role_permissions'][$setting_key]) && $settings['role_permissions'][$setting_key];
+                                            ?>
+                                            <input type="checkbox" name="<?php echo esc_attr($setting_key); ?>" value="1" 
+                                                   <?php checked($is_checked); ?>>
+                                            <span class="checkmark"></span>
+                                            <div class="checkbox-content">
+                                                <strong><?php echo esc_html($perm_label); ?></strong>
+                                                <?php
+                                                // Add specific descriptions for certain permissions
+                                                switch ($perm_key) {
+                                                    case 'can_delete_policy':
+                                                        echo '<p class="permission-desc">Bu rol poliçeleri kalıcı olarak silebilir.</p>';
+                                                        break;
+                                                    case 'can_view_deleted_policies':
+                                                        echo '<p class="permission-desc">Bu rol silinmiş poliçeleri görüntüleyebilir ve geri yükleyebilir.</p>';
+                                                        break;
+                                                    case 'can_change_customer_representative':
+                                                        echo '<p class="permission-desc">Müşteri düzenlenirken sorumlu temsilciyi değiştirebilir.</p>';
+                                                        break;
+                                                    case 'can_change_policy_representative':
+                                                        echo '<p class="permission-desc">Poliçe düzenlenirken sorumlu temsilciyi değiştirebilir.</p>';
+                                                        break;
+                                                    case 'can_change_task_representative':
+                                                        echo '<p class="permission-desc">Görev düzenlenirken sorumlu temsilciyi değiştirebilir.</p>';
+                                                        break;
+                                                }
+                                                ?>
+                                            </div>
+                                        </label>
+                                    </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                        
                         <div class="form-actions">
                             <button type="submit" name="submit_settings" class="btn-modern btn-save">
                                 <i class="fas fa-save"></i> Ayarları Kaydet
@@ -1301,6 +1455,52 @@ textarea.form-control {
     font-family: monospace;
     font-weight: 600;
     color: #374151;
+}
+
+/* Role-based Permissions Styling */
+.section-description {
+    color: #6c757d;
+    font-size: 14px;
+    margin-bottom: 25px;
+    line-height: 1.6;
+}
+
+.role-permissions-group {
+    background: #ffffff;
+    border: 1px solid #e9ecef;
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 25px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.role-permissions-group h4 {
+    color: #495057;
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 20px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 2px solid #f8f9fa;
+    padding-bottom: 10px;
+}
+
+.role-permissions-group h4 i {
+    color: #6c757d;
+}
+
+.permissions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.permission-desc {
+    font-size: 12px !important;
+    color: #6c757d !important;
+    font-style: italic;
+    margin-top: 5px !important;
 }
 
 @keyframes fadeIn {
