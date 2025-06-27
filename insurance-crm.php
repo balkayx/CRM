@@ -229,7 +229,7 @@ add_action('init', 'force_update_crm_db', 5);
 /**
  * Plugin version.
  */
-define('INSURANCE_CRM_VERSION', '1.8.1');
+define('INSURANCE_CRM_VERSION', '1.8.9');
 
 /**
  * Plugin base path

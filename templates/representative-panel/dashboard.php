@@ -1588,6 +1588,176 @@ function insurance_crm_rep_panel_scripts() {
 include_once __DIR__ . '/loader.php'; 
 ?>
 
+<!-- Version Notification Modal -->
+<div id="versionNotificationModal" class="version-modal" style="display: none;">
+    <div class="version-modal-content">
+        <span class="version-modal-close" onclick="closeVersionModal()">&times;</span>
+        <div class="version-modal-header">
+            <h2><i class="fas fa-rocket"></i> Yeni Versiyonda Neler Var? (v1.8.9)</h2>
+        </div>
+        <div class="version-modal-body">
+            <div class="version-feature">
+                <h3><i class="fas fa-shield-alt"></i> Detaylı Yetkilendirme Sistemi</h3>
+                <p>Artık yönetici tarafından size atanan yetkilere bağlı olarak işlem yapabileceksiniz. Örneğin, poliçe silme veya müşteri temsilcisi atama gibi yetkileriniz kısıtlanmış olabilir.</p>
+            </div>
+            <div class="version-feature">
+                <h3><i class="fas fa-lock"></i> Gelişmiş Güvenlik</h3>
+                <p>Yetki altyapısı, işlemlerinizi daha güvenli hale getirmek için güncellendi. Patron ve Müdür rolleri tüm kısıtlamalardan muaf tutulurken, diğer roller detaylı yetki kontrolüne tabi olacaktır.</p>
+            </div>
+            <div class="version-feature">
+                <h3><i class="fas fa-plus-circle"></i> Yeni Yetki Kategorileri</h3>
+                <p>Müşteri silme, veri dışa aktarma, toplu işlemler ve silinmiş kayıtları görüntüleme gibi yeni yetki kategorileri eklendi.</p>
+            </div>
+        </div>
+        <div class="version-modal-footer">
+            <button onclick="closeVersionModal()" class="version-modal-btn">Anladım, Devam Et</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.version-modal {
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    backdrop-filter: blur(5px);
+}
+
+.version-modal-content {
+    background-color: #ffffff;
+    margin: 5% auto;
+    padding: 0;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: translateY(-50px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.version-modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 25px 30px;
+    border-radius: 12px 12px 0 0;
+    position: relative;
+}
+
+.version-modal-header h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.version-modal-close {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    color: white;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.version-modal-close:hover {
+    transform: scale(1.1);
+    opacity: 0.7;
+}
+
+.version-modal-body {
+    padding: 30px;
+}
+
+.version-feature {
+    margin-bottom: 25px;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+}
+
+.version-feature h3 {
+    margin: 0 0 10px 0;
+    color: #2d3748;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.version-feature p {
+    margin: 0;
+    color: #4a5568;
+    line-height: 1.6;
+}
+
+.version-modal-footer {
+    padding: 20px 30px 30px;
+    text-align: center;
+}
+
+.version-modal-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.version-modal-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+</style>
+
+<script>
+function showVersionNotification() {
+    const currentVersion = '1.8.9';
+    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    
+    // Check if this version notification has been viewed
+    if (!localStorage.getItem(viewedKey)) {
+        document.getElementById('versionNotificationModal').style.display = 'block';
+    }
+}
+
+function closeVersionModal() {
+    const currentVersion = '1.8.9';
+    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    
+    // Mark this version as viewed
+    localStorage.setItem(viewedKey, 'true');
+    
+    // Hide modal
+    document.getElementById('versionNotificationModal').style.display = 'none';
+}
+
+// Show notification when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait a bit for page to load completely
+    setTimeout(showVersionNotification, 1000);
+});
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('versionNotificationModal');
+    if (event.target == modal) {
+        closeVersionModal();
+    }
+}
+</script>
+
     <div class="insurance-crm-sidenav">
         
         <div class="sidenav-user">

@@ -44,8 +44,8 @@ if (!function_exists('check_role_permission')) {
         
         $role_id = intval($rep->role);
         
-        // Patron (role 1) has all permissions
-        if ($role_id === 1) {
+        // Patron (role 1) and Müdür (role 2) have all permissions
+        if ($role_id === 1 || $role_id === 2) {
             return true;
         }
         
@@ -84,6 +84,30 @@ if (!function_exists('can_delete_policy_permission')) {
 if (!function_exists('can_view_deleted_policies')) {
     function can_view_deleted_policies($user_id = null) {
         return check_role_permission('can_view_deleted_policies', $user_id);
+    }
+}
+
+if (!function_exists('can_delete_customer')) {
+    function can_delete_customer($user_id = null) {
+        return check_role_permission('can_delete_customer', $user_id);
+    }
+}
+
+if (!function_exists('can_view_deleted_customers')) {
+    function can_view_deleted_customers($user_id = null) {
+        return check_role_permission('can_view_deleted_customers', $user_id);
+    }
+}
+
+if (!function_exists('can_export_data')) {
+    function can_export_data($user_id = null) {
+        return check_role_permission('can_export_data', $user_id);
+    }
+}
+
+if (!function_exists('can_bulk_operations')) {
+    function can_bulk_operations($user_id = null) {
+        return check_role_permission('can_bulk_operations', $user_id);
     }
 }
 
@@ -843,7 +867,11 @@ $total_task_types = count($settings['default_task_types']);
                                 'can_change_policy_representative' => 'Poliçe editlerken Temsilci Değiştirebilir',
                                 'can_change_task_representative' => 'Görev editlerken Temsilci Değiştirebilir',
                                 'can_delete_policy' => 'Poliçe Silebilir',
-                                'can_view_deleted_policies' => 'Silinmiş Poliçeleri Görebilir'
+                                'can_view_deleted_policies' => 'Silinmiş Poliçeleri Görebilir',
+                                'can_delete_customer' => 'Müşteri Silebilir',
+                                'can_view_deleted_customers' => 'Silinmiş Müşterileri Görebilir',
+                                'can_export_data' => 'Veri Dışa Aktarabilir',
+                                'can_bulk_operations' => 'Toplu İşlem Yapabilir'
                             ];
                             ?>
                             
@@ -880,6 +908,18 @@ $total_task_types = count($settings['default_task_types']);
                                                         break;
                                                     case 'can_change_task_representative':
                                                         echo '<p class="permission-desc">Görev düzenlenirken sorumlu temsilciyi değiştirebilir.</p>';
+                                                        break;
+                                                    case 'can_delete_customer':
+                                                        echo '<p class="permission-desc">Bu rol müşterileri kalıcı olarak silebilir.</p>';
+                                                        break;
+                                                    case 'can_view_deleted_customers':
+                                                        echo '<p class="permission-desc">Bu rol silinmiş müşterileri görüntüleyebilir ve geri yükleyebilir.</p>';
+                                                        break;
+                                                    case 'can_export_data':
+                                                        echo '<p class="permission-desc">Excel ve PDF formatında veri aktarımı yapabilir.</p>';
+                                                        break;
+                                                    case 'can_bulk_operations':
+                                                        echo '<p class="permission-desc">Çoklu seçim yaparak toplu işlemler gerçekleştirebilir.</p>';
                                                         break;
                                                 }
                                                 ?>
