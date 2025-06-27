@@ -361,7 +361,7 @@ $base_query = "FROM $tasks_table t
 if ($user_role_level === 1 || $user_role_level === 2 || $user_role_level === 3) {
     if (!$is_team_view) {
         // Kişisel görünüm: Sadece kendi görevlerini göster
-        $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+        $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
     }
     // Ekip görünümünde tüm görevleri görebilir (Patron, Müdür, Müdür Yardımcısı)
 } else if ($user_role_level === 4) {
@@ -379,22 +379,22 @@ if ($user_role_level === 1 || $user_role_level === 2 || $user_role_level === 3) 
             }
             
             if (!empty($valid_member_ids)) {
-                $member_placeholders = implode(',', array_fill(0, count($valid_member_ids), '%d'));
-                $base_query .= $wpdb->prepare(" AND t.representative_id IN ($member_placeholders)", ...$valid_member_ids);
+                $member_placeholders = implode(',', $valid_member_ids);
+                $base_query .= " AND t.representative_id IN ($member_placeholders)";
             } else {
-                $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+                $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
             }
         } else {
             // Ekip yoksa sadece kendi görevlerini görsün
-            $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+            $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
         }
     } else {
         // Kişisel görünüm: Sadece kendi görevlerini göster
-        $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+        $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
     }
 } else {
     // Normal müşteri temsilcisi sadece kendi görevlerini görebilir
-    $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+    $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
 }
 
 // İstatistik kartları için sadece kullanıcı/ekip kapsamı olan ayrı sorgu (show_completed filtresi uygulanmadan önce)
@@ -407,25 +407,20 @@ if (!$filters['show_completed']) {
 
 // Filtreleri ekle
 if (!empty($filters['customer_id'])) {
-    $base_query .= $wpdb->prepare(" AND t.customer_id = %d", $filters['customer_id']);
+    $base_query .= " AND t.customer_id = " . intval($filters['customer_id']);
 }
 if (!empty($filters['priority'])) {
-    $base_query .= $wpdb->prepare(" AND t.priority = %s", $filters['priority']);
+    $base_query .= " AND t.priority = '" . esc_sql($filters['priority']) . "'";
 }
 if (!empty($filters['status'])) {
-    $base_query .= $wpdb->prepare(" AND t.status = %s", $filters['status']);
+    $base_query .= " AND t.status = '" . esc_sql($filters['status']) . "'";
 }
 if (!empty($filters['task_title'])) {
-    $base_query .= $wpdb->prepare(
-        " AND (t.task_title LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s OR p.policy_number LIKE %s)",
-        '%' . $wpdb->esc_like($filters['task_title']) . '%',
-        '%' . $wpdb->esc_like($filters['task_title']) . '%',
-        '%' . $wpdb->esc_like($filters['task_title']) . '%',
-        '%' . $wpdb->esc_like($filters['task_title']) . '%'
-    );
+    $escaped_title = esc_sql($filters['task_title']);
+    $base_query .= " AND (t.task_title LIKE '%{$escaped_title}%' OR c.first_name LIKE '%{$escaped_title}%' OR c.last_name LIKE '%{$escaped_title}%' OR p.policy_number LIKE '%{$escaped_title}%')";
 }
 if (!empty($filters['due_date'])) {
-    $base_query .= $wpdb->prepare(" AND DATE(t.due_date) = %s", $filters['due_date']);
+    $base_query .= " AND DATE(t.due_date) = '" . esc_sql($filters['due_date']) . "'";
 }
 
 // Zaman filtresi (bugün, bu hafta, bu ay)
@@ -433,34 +428,34 @@ if (!empty($filters['time_filter'])) {
     $today_date = date('Y-m-d');
     switch ($filters['time_filter']) {
         case 'today':
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) = %s", $today_date);
+            $base_query .= " AND DATE(t.due_date) = '" . esc_sql($today_date) . "'";
             break;
         case 'tomorrow':
             $tomorrow = date('Y-m-d', strtotime('+1 day'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) = %s", $tomorrow);
+            $base_query .= " AND DATE(t.due_date) = '" . esc_sql($tomorrow) . "'";
             break;
         case 'this_week':
             $week_start = date('Y-m-d', strtotime('monday this week'));
             $week_end = date('Y-m-d', strtotime('sunday this week'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $week_start, $week_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'";
             break;
         case 'next_week':
             $week_start = date('Y-m-d', strtotime('monday next week'));
             $week_end = date('Y-m-d', strtotime('sunday next week'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $week_start, $week_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'";
             break;
         case 'this_month':
             $month_start = date('Y-m-01');
             $month_end = date('Y-m-t');
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $month_start, $month_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($month_start) . "' AND '" . esc_sql($month_end) . "'";
             break;
         case 'next_month':
             $next_month_start = date('Y-m-01', strtotime('first day of next month'));
             $next_month_end = date('Y-m-t', strtotime('first day of next month'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $next_month_start, $next_month_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_month_start) . "' AND '" . esc_sql($next_month_end) . "'";
             break;
         case 'overdue':
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) < %s AND t.status NOT IN ('completed', 'cancelled')", $today_date);
+            $base_query .= " AND DATE(t.due_date) < '" . esc_sql($today_date) . "' AND t.status NOT IN ('completed', 'cancelled')";
             break;
     }
 }
@@ -471,38 +466,38 @@ $total_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query);
 
 // Bugünkü görevler
 $today_date = date('Y-m-d');
-$today_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) = %s", $today_date));
+$today_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) = '" . esc_sql($today_date) . "'");
 
 // Yarınki görevler
 $tomorrow_date = date('Y-m-d', strtotime('+1 day'));
-$tomorrow_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) = %s", $tomorrow_date));
+$tomorrow_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) = '" . esc_sql($tomorrow_date) . "'");
 
 // Bu haftaki görevler
 $week_start = date('Y-m-d', strtotime('monday this week'));
 $week_end = date('Y-m-d', strtotime('sunday this week'));
-$this_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $week_start, $week_end));
+$this_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'");
 
 // Gelecek haftaki görevler
 $next_week_start = date('Y-m-d', strtotime('monday next week'));
 $next_week_end = date('Y-m-d', strtotime('sunday next week'));
-$next_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $next_week_start, $next_week_end));
+$next_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_week_start) . "' AND '" . esc_sql($next_week_end) . "'");
 
 // Bu ayki görevler
 $month_start = date('Y-m-01');
 $month_end = date('Y-m-t');
-$this_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $month_start, $month_end));
+$this_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($month_start) . "' AND '" . esc_sql($month_end) . "'");
 
 // Gelecek ayki görevler
 $next_month_start = date('Y-m-01', strtotime('first day of next month'));
 $next_month_end = date('Y-m-t', strtotime('first day of next month'));
-$next_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $next_month_start, $next_month_end));
+$next_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_month_start) . "' AND '" . esc_sql($next_month_end) . "'");
 
 // Gecikmiş görevler
-$overdue_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) < %s AND t.status NOT IN ('completed', 'cancelled')", $today_date));
+$overdue_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND DATE(t.due_date) < '" . esc_sql($today_date) . "' AND t.status NOT IN ('completed', 'cancelled')");
 
 // Bu ay eklenen görevler
 $this_month_start_date = date('Y-m-01 00:00:00');
-$created_this_month = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND t.created_at >= %s", $this_month_start_date));
+$created_this_month = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.created_at >= '" . esc_sql($this_month_start_date) . "'");
 
 // Durum bazlı görev sayıları
 // İstatistik kartı için doğru tamamlanan görev sayısı (sadece kullanıcı/ekip kapsamı)
@@ -570,7 +565,7 @@ $total_items = $total_tasks;
 $customers_query = "";
 if ($user_role_level === 5 || ($user_role_level === 4 && !$is_team_view)) {
     // Müşteri Temsilcisi veya Ekip Lideri (kendi görünümü) - sadece kendi müşterilerini görsün
-    $customers_query .= $wpdb->prepare(" AND c.representative_id = %d", $current_user_rep_id);
+    $customers_query .= " AND c.representative_id = " . intval($current_user_rep_id);
 } elseif ($user_role_level === 4 && $is_team_view) {
     // Ekip Lideri (ekip görünümü) - ekip üyelerinin müşterilerini görsün
     $team_member_ids = get_team_members_ids(get_current_user_id());
@@ -584,13 +579,13 @@ if ($user_role_level === 5 || ($user_role_level === 4 && !$is_team_view)) {
         }
         
         if (!empty($valid_member_ids)) {
-            $placeholders = implode(',', array_fill(0, count($valid_member_ids), '%d'));
-            $customers_query .= $wpdb->prepare(" AND c.representative_id IN ($placeholders)", ...$valid_member_ids);
+            $placeholders = implode(',', $valid_member_ids);
+            $customers_query .= " AND c.representative_id IN ($placeholders)";
         } else {
-            $customers_query .= $wpdb->prepare(" AND c.representative_id = %d", $current_user_rep_id);
+            $customers_query .= " AND c.representative_id = " . intval($current_user_rep_id);
         }
     } else {
-        $customers_query .= $wpdb->prepare(" AND c.representative_id = %d", $current_user_rep_id);
+        $customers_query .= " AND c.representative_id = " . intval($current_user_rep_id);
     }
 }
 

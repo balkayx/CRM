@@ -189,6 +189,27 @@ function force_update_crm_db() {
         $wpdb->query("ALTER TABLE `{$table_name}` ADD COLUMN `customer_notes_updated_at` DATETIME DEFAULT NULL");
         error_log('customer_notes_updated_at column added to customers table');
     }
+    
+    // **NEW**: Ensure task notes table exists
+    $task_notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+    if ($wpdb->get_var("SHOW TABLES LIKE '$task_notes_table'") != $task_notes_table) {
+        $charset_collate = $wpdb->get_charset_collate();
+        $sql_task_notes = "CREATE TABLE $task_notes_table (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            task_id bigint(20) NOT NULL,
+            note_content text NOT NULL,
+            created_by bigint(20) NOT NULL,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY task_id (task_id),
+            KEY created_by (created_by)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql_task_notes);
+        error_log('insurance_crm_task_notes table created in force_update_crm_db()');
+    }
 }
 // Her sayfa yüklendiğinde bu fonksiyonu çalıştır - böylece sütunların varlığından emin oluruz
 add_action('init', 'force_update_crm_db', 5);
@@ -574,6 +595,7 @@ function insurance_crm_check_db_tables() {
         'insurance_crm_customers',
         'insurance_crm_policies',
         'insurance_crm_tasks',
+        'insurance_crm_task_notes',
         'insurance_crm_representatives',
         'insurance_crm_helpdesk_tickets',
         'insurance_user_logs',
