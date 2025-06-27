@@ -183,6 +183,28 @@ if (!isset($settings['occupation_settings']['default_occupations'])) {
     $settings['occupation_settings']['default_occupations'] = array('Doktor', 'Mühendis', 'Öğretmen', 'Avukat', 'Muhasebeci', 'İşçi', 'Memur', 'Emekli');
 }
 
+// Default values for update announcements system
+if (!isset($settings['update_announcements'])) {
+    $settings['update_announcements'] = array(
+        'enabled' => false,
+        'title' => 'Sistem Güncellemeleri',
+        'content' => '<h3><i class="fas fa-rocket"></i> Kullanıcı Bazlı Yetki Sistemi</h3>
+<p>Artık her temsilci için ayrı ayrı yetki tanımlanabilir. Patron ve Müdür rolleri tüm yetkiler sahipken, diğer kullanıcılar için bireysel yetkiler atanabilir.</p>
+<ul>
+<li><strong>Müşteri Düzenleme/Silme Yetkileri</strong></li>
+<li><strong>Poliçe Düzenleme/Silme Yetkileri</strong></li>
+<li><strong>Görev Düzenleme Yetkileri</strong></li>
+<li><strong>Veri Dışa Aktarma Yetkileri</strong></li>
+<li><strong>Toplu İşlem Yetkileri</strong></li>
+</ul>
+<h3><i class="fas fa-cog"></i> Yönetici Duyuru Sistemi</h3>
+<p>Yöneticiler artık ayarlar bölümünden güncelleme duyuruları yayınlayabilir ve tüm kullanıcılara otomatik olarak gösterebilir.</p>',
+        'version' => '1.8.3',
+        'show_to_all' => false,
+        'last_updated' => current_time('mysql')
+    );
+}
+
 // Form gönderildiğinde
 if (isset($_POST['submit_settings']) && isset($_POST['settings_nonce']) && 
     wp_verify_nonce($_POST['settings_nonce'], 'save_settings')) {

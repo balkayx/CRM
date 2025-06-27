@@ -54,6 +54,9 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
     $customer_delete = isset($_POST['customer_delete']) ? 1 : 0;
     $policy_edit = isset($_POST['policy_edit']) ? 1 : 0;
     $policy_delete = isset($_POST['policy_delete']) ? 1 : 0;
+    $task_edit = isset($_POST['task_edit']) ? 1 : 0;
+    $export_data = isset($_POST['export_data']) ? 1 : 0;
+    $bulk_operations = isset($_POST['bulk_operations']) ? 1 : 0;
     
     // Zorunlu alanları kontrol et
     if (empty($username)) {
@@ -149,6 +152,9 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
                     'customer_delete' => $customer_delete,
                     'policy_edit' => $policy_edit,
                     'policy_delete' => $policy_delete,
+                    'task_edit' => $task_edit,
+                    'export_data' => $export_data,
+                    'bulk_operations' => $bulk_operations,
                     'status' => 'active',
                     'created_at' => current_time('mysql'),
                     'updated_at' => current_time('mysql')
@@ -460,6 +466,39 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
                                         <div class="label-text">
                                             <span class="label-title">Poliçe Silme</span>
                                             <span class="label-desc">Poliçe kaydını pasife alabilir/silebilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="task_edit" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Görev Düzenleme</span>
+                                            <span class="label-desc">Görev bilgilerini düzenleyebilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="export_data" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Veri Dışa Aktarma</span>
+                                            <span class="label-desc">Excel/PDF formatında veri aktarabilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+                                
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="bulk_operations" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Toplu İşlemler</span>
+                                            <span class="label-desc">Çoklu seçim ile toplu işlem yapabilir</span>
                                         </div>
                                     </label>
                                 </div>

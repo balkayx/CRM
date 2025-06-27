@@ -62,6 +62,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_representative_su
     $customer_delete = isset($_POST['customer_delete']) ? 1 : 0;
     $policy_edit = isset($_POST['policy_edit']) ? 1 : 0;
     $policy_delete = isset($_POST['policy_delete']) ? 1 : 0;
+    $task_edit = isset($_POST['task_edit']) ? 1 : 0;
+    $export_data = isset($_POST['export_data']) ? 1 : 0;
+    $bulk_operations = isset($_POST['bulk_operations']) ? 1 : 0;
     
     // Personal information fields
     $birth_date = isset($_POST['birth_date']) ? sanitize_text_field($_POST['birth_date']) : '';
@@ -169,6 +172,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_representative_su
                     'customer_delete' => $customer_delete,
                     'policy_edit' => $policy_edit,
                     'policy_delete' => $policy_delete,
+                    'task_edit' => $task_edit,
+                    'export_data' => $export_data,
+                    'bulk_operations' => $bulk_operations,
                     'birth_date' => !empty($birth_date) ? $birth_date : null,
                     'wedding_anniversary' => !empty($wedding_anniversary) ? $wedding_anniversary : null,
                     'children_birthdays' => $children_birthdays_json,
@@ -558,6 +564,39 @@ foreach ($teams as $team) {
                                     <div class="label-text">
                                         <span class="label-title"><i class="fas fa-file-times"></i> Poliçe Silme</span>
                                         <span class="label-desc">Poliçe kaydını pasife alabilir/silebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="task_edit" value="1" <?php checked(isset($representative->task_edit) ? $representative->task_edit : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-tasks"></i> Görev Düzenleme</span>
+                                        <span class="label-desc">Görev bilgilerini düzenleyebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="export_data" value="1" <?php checked(isset($representative->export_data) ? $representative->export_data : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-download"></i> Veri Dışa Aktarma</span>
+                                        <span class="label-desc">Excel/PDF formatında veri aktarabilir</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="bulk_operations" value="1" <?php checked(isset($representative->bulk_operations) ? $representative->bulk_operations : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-layer-group"></i> Toplu İşlemler</span>
+                                        <span class="label-desc">Çoklu seçim ile toplu işlem yapabilir</span>
                                     </div>
                                 </label>
                             </div>
