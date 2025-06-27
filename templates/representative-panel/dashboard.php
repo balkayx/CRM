@@ -4570,33 +4570,6 @@ window.addEventListener('resize', function() {
            
 
 <?php elseif ($current_view == 'team'): ?>
-<header class="crm-header">
-    <div class="header-content">
-        <div class="title-section">
-            <div class="page-title">
-                <i class="fas fa-users"></i>
-                <h1><?php echo esc_html($current_user->display_name); ?> Dashboard</h1>
-                <span class="version-badge">v<?php echo defined('INSURANCE_CRM_VERSION') ? INSURANCE_CRM_VERSION : '1.1.3'; ?></span>
-            </div>
-            <div class="user-badge">
-                <span class="role-badge">
-                    <i class="fas fa-user-shield"></i>
-                    <?php 
-                    $user_role = get_user_role_in_hierarchy($current_user->ID);
-                    $role_names = [
-                        'patron' => 'Patron',
-                        'manager' => 'Müdür', 
-                        'assistant_manager' => 'Müdür Yardımcısı',
-                        'team_leader' => 'Ekip Lideri',
-                        'representative' => 'Müşteri Temsilcisi'
-                    ];
-                    echo esc_html($role_names[$user_role] ?? 'Bilinmiyor');
-                    ?>
-                </span>
-            </div>
-        </div>
-    </div>
-</header>
 
 <div class="stats-grid">
     <div class="stat-box customers-box">
@@ -4752,32 +4725,6 @@ window.addEventListener('resize', function() {
             $user_role = get_user_role_in_hierarchy($current_user->ID);
             if ($user_role != 'team_leader' && $user_role != 'representative'): 
             ?>
-            <header class="crm-header">
-                <div class="header-content">
-                    <div class="title-section">
-                        <div class="page-title">
-                            <i class="fas fa-tachometer-alt"></i>
-                            <h1><?php echo esc_html($current_user->display_name); ?> Dashboard</h1>
-                            <span class="version-badge">v<?php echo defined('INSURANCE_CRM_VERSION') ? INSURANCE_CRM_VERSION : '1.1.3'; ?></span>
-                        </div>
-                        <div class="user-badge">
-                            <span class="role-badge">
-                                <i class="fas fa-user-shield"></i>
-                                <?php 
-                                $role_names = [
-                                    'patron' => 'Patron',
-                                    'manager' => 'Müdür', 
-                                    'assistant_manager' => 'Müdür Yardımcısı',
-                                    'team_leader' => 'Ekip Lideri',
-                                    'representative' => 'Müşteri Temsilcisi'
-                                ];
-                                echo esc_html($role_names[$user_role] ?? 'Bilinmiyor');
-                                ?>
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </header>
             <?php endif; ?>
             
             <div class="stats-grid">

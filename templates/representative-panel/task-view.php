@@ -395,28 +395,61 @@ if ($is_overdue) {
             </div>
         </div>
     </div>
-</div>
-
-<!-- Task Notes Modals -->
-<div id="taskNotesModal" class="task-modal" style="display: none;">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-sticky-note"></i> Görev Notları</h3>
-            <button class="modal-close" onclick="closeModal('taskNotesModal')">
-                <i class="fas fa-times"></i>
+    
+    <!-- Görev Notları Bölümü -->
+    <div class="task-notes-section">
+        <div class="section-header">
+            <h2><i class="fas fa-sticky-note"></i> Görev Notları</h2>
+            <button type="button" class="btn btn-primary" onclick="showAddNoteModal(<?php echo $task_id; ?>)">
+                <i class="fas fa-plus"></i> Yeni Not Ekle
             </button>
         </div>
-        <div class="modal-body">
-            <div id="taskNotesList" class="notes-list"></div>
-            <div class="notes-actions">
-                <button type="button" class="btn btn-primary" onclick="showAddNoteModal(this.closest('.task-modal').dataset.taskId)">
-                    <i class="fas fa-plus"></i> Yeni Not Ekle
-                </button>
-            </div>
+        
+        <div id="stickyNotesContainer" class="sticky-notes-container">
+            <?php
+            // Get task notes using the existing function
+            $task_notes = get_task_notes($task_id);
+            if (!empty($task_notes)): 
+                foreach ($task_notes as $note): ?>
+                    <div class="sticky-note" data-note-id="<?php echo $note->id; ?>">
+                        <div class="sticky-note-header">
+                            <span class="sticky-note-author"><?php echo esc_html($note->created_by_name); ?></span>
+                            <span class="sticky-note-date"><?php echo esc_html($note->created_at_formatted); ?></span>
+                            <?php if ($note->can_edit): ?>
+                                <div class="sticky-note-actions">
+                                    <button type="button" class="sticky-note-edit" title="Notu Düzenle" 
+                                            onclick="showEditNoteModal(<?php echo $note->id; ?>, '<?php echo esc_js($note->note_content); ?>');">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <form method="post" action="" style="display: inline;">
+                                        <input type="hidden" name="action" value="delete_task_note">
+                                        <input type="hidden" name="note_id" value="<?php echo $note->id; ?>">
+                                        <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+                                        <button type="submit" class="sticky-note-delete" title="Notu Sil" 
+                                                onclick="return confirm('Bu notu silmek istediğinizden emin misiniz?');">
+                                            <i class="fas fa-times"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="sticky-note-content">
+                            <?php echo nl2br(esc_html($note->note_content)); ?>
+                        </div>
+                    </div>
+                <?php endforeach;
+            else: ?>
+                <div class="no-notes-message">
+                    <i class="fas fa-sticky-note"></i>
+                    <p>Henüz bu göreve ait not bulunmuyor.</p>
+                    <p>İlk notu eklemek için "Yeni Not Ekle" butonunu kullanın.</p>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 </div>
 
+<!-- Task Notes Modals -->
 <div id="addNoteModal" class="task-modal" style="display: none;">
     <div class="modal-content">
         <div class="modal-header">
@@ -425,20 +458,55 @@ if ($is_overdue) {
                 <i class="fas fa-times"></i>
             </button>
         </div>
-        <div class="modal-body">
-            <div class="form-group">
-                <label for="newNoteContent">Not İçeriği:</label>
-                <textarea id="newNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+        <form method="post" action="">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newNoteContent">Not İçeriği:</label>
+                    <textarea name="note_content" id="newNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+                </div>
+                <input type="hidden" name="task_id" value="<?php echo $task_id; ?>">
+                <input type="hidden" name="action" value="save_task_note">
+                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
             </div>
-        </div>
-        <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" onclick="closeModal('addNoteModal')">
-                <i class="fas fa-times"></i> İptal
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addNoteModal')">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Kaydet
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="editNoteModal" class="task-modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-edit"></i> Not Düzenle</h3>
+            <button class="modal-close" onclick="closeModal('editNoteModal')">
+                <i class="fas fa-times"></i>
             </button>
-            <button type="button" class="btn btn-primary" onclick="saveTaskNote()">
-                <i class="fas fa-save"></i> Kaydet
-            </button>
         </div>
+        <form method="post" action="">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="editNoteContent">Not İçeriği:</label>
+                    <textarea name="note_content" id="editNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+                </div>
+                <input type="hidden" name="note_id" id="editNoteId" value="">
+                <input type="hidden" name="action" value="edit_task_note">
+                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('editNoteModal')">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Güncelle
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -1275,6 +1343,224 @@ if ($is_overdue) {
     from { transform: translateY(-50px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
 }
+
+@keyframes fadeOut {
+    from { opacity: 1; transform: scale(1); }
+    to { opacity: 0; transform: scale(0.8); }
+}
+
+/* Görev Notları Sticky Note Tasarımı */
+.task-notes-section {
+    margin-top: 30px;
+    padding: 20px;
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+}
+
+.task-notes-section .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--outline-variant);
+}
+
+.task-notes-section .section-header h2 {
+    margin: 0;
+    color: var(--on-surface);
+    font-size: var(--font-size-xl);
+    font-weight: 600;
+}
+
+.task-notes-section .section-header h2 i {
+    color: var(--warning);
+    margin-right: 10px;
+}
+
+.sticky-notes-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.sticky-note {
+    background: #FFFFE0;
+    border: 1px solid #F0E68C;
+    border-radius: 8px;
+    padding: 15px;
+    position: relative;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+    transform: rotate(-2deg);
+    transition: all 0.3s ease;
+    min-height: 120px;
+    cursor: default;
+}
+
+.sticky-note:nth-child(even) {
+    transform: rotate(1deg);
+    background: #F0FFF0;
+    border-color: #98FB98;
+}
+
+.sticky-note:nth-child(3n) {
+    transform: rotate(-1deg);
+    background: #F0F8FF;
+    border-color: #87CEEB;
+}
+
+.sticky-note:hover {
+    transform: rotate(0deg) scale(1.05);
+    z-index: 10;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25), 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.sticky-note::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 30px;
+    height: 15px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 15px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.sticky-note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed rgba(0, 0, 0, 0.2);
+    font-size: 12px;
+    color: #666;
+}
+
+.sticky-note-author {
+    font-weight: 600;
+    color: #333;
+}
+
+.sticky-note-date {
+    color: #888;
+    font-size: 11px;
+}
+
+.sticky-note-actions {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 5px;
+}
+
+.sticky-note-edit {
+    width: 24px;
+    height: 24px;
+    background: rgba(255, 193, 7, 0.1);
+    border: 1px solid #ffc107;
+    border-radius: 50%;
+    color: #ffc107;
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.sticky-note-edit:hover {
+    background: #ffc107;
+    color: #333;
+    transform: scale(1.1);
+}
+
+.sticky-note-delete {
+    width: 24px;
+    height: 24px;
+    background: rgba(220, 53, 69, 0.1);
+    border: 1px solid #dc3545;
+    border-radius: 50%;
+    color: #dc3545;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.sticky-note-delete:hover {
+    background: #dc3545;
+    color: white;
+    transform: scale(1.1);
+}
+
+.sticky-note-content {
+    color: #333;
+    line-height: 1.4;
+    font-size: 13px;
+    word-wrap: break-word;
+    margin-top: 8px;
+}
+
+.no-notes-message {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--on-surface-variant);
+    background: var(--surface-variant);
+    border-radius: var(--radius-md);
+    border: 2px dashed var(--outline-variant);
+}
+
+.no-notes-message i {
+    font-size: 48px;
+    color: var(--warning);
+    margin-bottom: 15px;
+    display: block;
+}
+
+.no-notes-message p {
+    margin: 8px 0;
+    font-size: var(--font-size-sm);
+}
+
+.no-notes-message p:first-of-type {
+    font-weight: 600;
+    font-size: var(--font-size-base);
+    color: var(--on-surface);
+}
+
+/* Responsive tasarım */
+@media (max-width: 768px) {
+    .sticky-notes-container {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+    
+    .task-notes-section .section-header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+    
+    .sticky-note {
+        transform: rotate(0deg);
+        min-height: auto;
+    }
+    
+    .sticky-note:hover {
+        transform: scale(1.02);
+    }
+}
 </style>
 
 <script>
@@ -1344,117 +1630,24 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Task Notes Functions
-function showTaskNotes(taskId) {
-    fetch(`?action=get_task_notes&task_id=${taskId}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                displayNotesModal(taskId, data.notes);
-            } else {
-                alert('Notlar yüklenemedi: ' + data.message);
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            alert('Notlar yüklenirken bir hata oluştu.');
-        });
-}
-
-function displayNotesModal(taskId, notes) {
-    const modal = document.getElementById('taskNotesModal');
-    const notesList = document.getElementById('taskNotesList');
-    
-    notesList.innerHTML = '';
-    
-    notes.forEach(note => {
-        const noteDiv = document.createElement('div');
-        noteDiv.className = 'note-item';
-        noteDiv.innerHTML = `
-            <div class="note-header">
-                <strong>${note.created_by_name}</strong>
-                <span class="note-date">${note.created_at}</span>
-                ${note.can_edit ? `<button onclick="deleteTaskNote(${note.id}, ${taskId})" class="btn-delete-note"><i class="fas fa-trash"></i></button>` : ''}
-            </div>
-            <div class="note-content">${note.note_content}</div>
-        `;
-        notesList.appendChild(noteDiv);
-    });
-    
-    modal.dataset.taskId = taskId;
-    modal.style.display = 'flex';
-}
-
 function showAddNoteModal(taskId) {
     const modal = document.getElementById('addNoteModal');
     const textarea = document.getElementById('newNoteContent');
     
     textarea.value = '';
-    modal.dataset.taskId = taskId;
     modal.style.display = 'flex';
     textarea.focus();
 }
 
-function saveTaskNote() {
-    const modal = document.getElementById('addNoteModal');
-    const taskId = modal.dataset.taskId;
-    const content = document.getElementById('newNoteContent').value.trim();
+function showEditNoteModal(noteId, noteContent) {
+    const modal = document.getElementById('editNoteModal');
+    const textarea = document.getElementById('editNoteContent');
+    const noteIdInput = document.getElementById('editNoteId');
     
-    if (!content) {
-        alert('Lütfen not içeriği giriniz.');
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('action', 'save_task_note');
-    formData.append('task_id', taskId);
-    formData.append('note_content', content);
-    formData.append('nonce', '<?php echo wp_create_nonce("task_note_nonce"); ?>');
-    
-    fetch(window.location.href, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            closeModal('addNoteModal');
-            location.reload();
-        } else {
-            alert('Not kaydedilemedi: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Not kaydedilirken bir hata oluştu.');
-    });
-}
-
-function deleteTaskNote(noteId, taskId) {
-    if (!confirm('Bu notu silmek istediğinizden emin misiniz?')) {
-        return;
-    }
-    
-    const formData = new FormData();
-    formData.append('action', 'delete_task_note');
-    formData.append('note_id', noteId);
-    formData.append('nonce', '<?php echo wp_create_nonce("task_note_nonce"); ?>');
-    
-    fetch(window.location.href, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showTaskNotes(taskId);
-        } else {
-            alert('Not silinemedi: ' + data.message);
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        alert('Not silinirken bir hata oluştu.');
-    });
+    textarea.value = noteContent;
+    noteIdInput.value = noteId;
+    modal.style.display = 'flex';
+    textarea.focus();
 }
 
 function closeModal(modalId) {
