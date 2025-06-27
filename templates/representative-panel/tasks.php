@@ -45,6 +45,11 @@ $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can(
 if (isset($_POST['action']) || isset($_GET['action'])) {
     $action = isset($_POST['action']) ? $_POST['action'] : $_GET['action'];
     
+    // Clear any output that might have been generated before
+    if (ob_get_level()) {
+        ob_clean();
+    }
+    
     switch ($action) {
         case 'get_task_notes':
             if (isset($_GET['task_id'])) {
@@ -54,9 +59,7 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                 // Check if table exists
                 $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
                 if ($table_exists != $notes_table) {
-                    header('Content-Type: application/json');
-                    echo json_encode(['success' => false, 'message' => 'Notlar tablosu bulunamadı.', 'notes' => []]);
-                    exit;
+                    wp_send_json_error('Notlar tablosu bulunamadı.');
                 }
                 
                 $notes = $wpdb->get_results($wpdb->prepare("
@@ -74,13 +77,9 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                     }
                 }
                 
-                header('Content-Type: application/json');
-                echo json_encode(['success' => true, 'notes' => $notes ? $notes : []]);
-                exit;
+                wp_send_json_success(['notes' => $notes ? $notes : []]);
             } else {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'Görev ID eksik.', 'notes' => []]);
-                exit;
+                wp_send_json_error('Görev ID eksik.');
             }
             break;
             
@@ -94,9 +93,7 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                     // Check if table exists before attempting insert
                     $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
                     if ($table_exists != $notes_table) {
-                        header('Content-Type: application/json');
-                        echo json_encode(['success' => false, 'message' => 'Notlar tablosu bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.']);
-                        exit;
+                        wp_send_json_error('Notlar tablosu bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.');
                     }
                     
                     $result = $wpdb->insert(
@@ -111,24 +108,15 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                     );
                     
                     if ($result === false) {
-                        error_log('Task note insert failed. Last error: ' . $wpdb->last_error);
+                        wp_send_json_error('Not kaydedilemedi. Hata: ' . $wpdb->last_error);
+                    } else {
+                        wp_send_json_success('Not başarıyla kaydedildi.');
                     }
-                    
-                    header('Content-Type: application/json');
-                    echo json_encode([
-                        'success' => $result !== false, 
-                        'message' => $result ? 'Not başarıyla kaydedildi.' : 'Not kaydedilemedi. Hata: ' . $wpdb->last_error
-                    ]);
-                    exit;
                 } else {
-                    header('Content-Type: application/json');
-                    echo json_encode(['success' => false, 'message' => 'Güvenlik doğrulaması başarısız.']);
-                    exit;
+                    wp_send_json_error('Güvenlik doğrulaması başarısız.');
                 }
             } else {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'Gerekli parametreler eksik.']);
-                exit;
+                wp_send_json_error('Gerekli parametreler eksik.');
             }
             break;
             
@@ -141,31 +129,26 @@ if (isset($_POST['action']) || isset($_GET['action'])) {
                     // Check if table exists
                     $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
                     if ($table_exists != $notes_table) {
-                        header('Content-Type: application/json');
-                        echo json_encode(['success' => false, 'message' => 'Notlar tablosu bulunamadı.']);
-                        exit;
+                        wp_send_json_error('Notlar tablosu bulunamadı.');
                     }
                     
                     // Check if user can delete this note
                     $note = $wpdb->get_row($wpdb->prepare("SELECT created_by FROM $notes_table WHERE id = %d", $note_id));
                     if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
                         $result = $wpdb->delete($notes_table, array('id' => $note_id), array('%d'));
-                        header('Content-Type: application/json');
-                        echo json_encode(['success' => $result !== false, 'message' => $result ? 'Not başarıyla silindi.' : 'Not silinemedi.']);
+                        if ($result !== false) {
+                            wp_send_json_success('Not başarıyla silindi.');
+                        } else {
+                            wp_send_json_error('Not silinemedi.');
+                        }
                     } else {
-                        header('Content-Type: application/json');
-                        echo json_encode(['success' => false, 'message' => 'Bu notu silme yetkiniz yok.']);
+                        wp_send_json_error('Bu notu silme yetkiniz yok.');
                     }
-                    exit;
                 } else {
-                    header('Content-Type: application/json');
-                    echo json_encode(['success' => false, 'message' => 'Güvenlik doğrulaması başarısız.']);
-                    exit;
+                    wp_send_json_error('Güvenlik doğrulaması başarısız.');
                 }
             } else {
-                header('Content-Type: application/json');
-                echo json_encode(['success' => false, 'message' => 'Gerekli parametreler eksik.']);
-                exit;
+                wp_send_json_error('Gerekli parametreler eksik.');
             }
             break;
     }
@@ -3718,14 +3701,14 @@ function showTaskNotes(taskId) {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                displayNotesModal(taskId, data.notes);
+                displayNotesModal(taskId, data.data.notes);
             } else {
-                alert('Notlar yüklenemedi: ' + data.message);
+                alert('Notlar yüklenemedi: ' + (data.data || data.message || 'Bilinmeyen hata'));
             }
         })
         .catch(error => {
-            console.error('Error:', error);
-            alert('Notlar yüklenirken bir hata oluştu.');
+            console.error('Error loading notes:', error);
+            alert('Notlar yüklenirken bir hata oluştu. Lütfen tekrar deneyin.');
         });
 }
 
@@ -3792,12 +3775,12 @@ function saveTaskNote() {
             closeModal('addNoteModal');
             location.reload(); // Reload to show updated note count
         } else {
-            alert('Not kaydedilemedi: ' + data.message);
+            alert('Not kaydedilemedi: ' + (data.data || data.message || 'Bilinmeyen hata'));
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('Not kaydedilirken bir hata oluştu.');
+        console.error('Error saving note:', error);
+        alert('Not kaydedilirken bir hata oluştu. Lütfen tekrar deneyin.');
     });
 }
 
@@ -3821,12 +3804,12 @@ function deleteTaskNote(noteId, taskId) {
             showTaskNotes(taskId); // Refresh notes list
             location.reload(); // Reload to show updated note count
         } else {
-            alert('Not silinemedi: ' + data.message);
+            alert('Not silinemedi: ' + (data.data || data.message || 'Bilinmeyen hata'));
         }
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('Not silinirken bir hata oluştu.');
+        console.error('Error deleting note:', error);
+        alert('Not silinirken bir hata oluştu. Lütfen tekrar deneyin.');
     });
 }
 
