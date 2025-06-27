@@ -168,7 +168,12 @@ if ($is_overdue) {
                 <span>Düzenle</span>
             </a>
             
-            <?php if ($task->status !== 'completed' && ($is_admin || $patron_access || $task->representative_id == $current_user_rep_id)): ?>
+            <button type="button" class="btn btn-info add-note-btn" data-task-id="<?php echo $task_id; ?>">
+                <i class="fas fa-sticky-note"></i>
+                <span>Not Ekle</span>
+            </button>
+            
+            <?php if ($is_admin || $patron_access || $task->representative_id == $current_user_rep_id): ?>
             <a href="<?php echo wp_nonce_url('?view=tasks&action=complete&id=' . $task_id, 'complete_task_' . $task_id); ?>" class="btn btn-primary"
                 onclick="return confirm('Bu görevi tamamlandı olarak işaretlemek istediğinizden emin misiniz?');">
                 <i class="fas fa-check"></i>
@@ -388,6 +393,51 @@ if ($is_overdue) {
                     </a>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Task Notes Modals -->
+<div id="taskNotesModal" class="task-modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-sticky-note"></i> Görev Notları</h3>
+            <button class="modal-close" onclick="closeModal('taskNotesModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div id="taskNotesList" class="notes-list"></div>
+            <div class="notes-actions">
+                <button type="button" class="btn btn-primary" onclick="showAddNoteModal(this.closest('.task-modal').dataset.taskId)">
+                    <i class="fas fa-plus"></i> Yeni Not Ekle
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="addNoteModal" class="task-modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-sticky-note"></i> Yeni Not Ekle</h3>
+            <button class="modal-close" onclick="closeModal('addNoteModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div class="form-group">
+                <label for="newNoteContent">Not İçeriği:</label>
+                <textarea id="newNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('addNoteModal')">
+                <i class="fas fa-times"></i> İptal
+            </button>
+            <button type="button" class="btn btn-primary" onclick="saveTaskNote()">
+                <i class="fas fa-save"></i> Kaydet
+            </button>
         </div>
     </div>
 </div>
@@ -1033,6 +1083,198 @@ if ($is_overdue) {
         justify-content: center;
     }
 }
+
+/* Task Notes Modal Styles */
+.task-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.task-modal .modal-content {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideIn 0.3s ease;
+}
+
+.task-modal .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    border-radius: 12px 12px 0 0;
+}
+
+.task-modal .modal-header h3 {
+    margin: 0;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: #666;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.modal-close:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #333;
+}
+
+.task-modal .modal-body {
+    padding: 20px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.task-modal .modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    background: #f8f9fa;
+    border-radius: 0 0 12px 12px;
+}
+
+.notes-list {
+    margin-bottom: 20px;
+}
+
+.note-item {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #666;
+}
+
+.note-header strong {
+    color: #333;
+    font-size: 14px;
+}
+
+.note-date {
+    color: #888;
+}
+
+.btn-delete-note {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-delete-note:hover {
+    background: #c82333;
+}
+
+.note-content {
+    color: #333;
+    line-height: 1.6;
+    white-space: pre-line;
+    font-size: 14px;
+}
+
+.notes-actions {
+    border-top: 1px solid #e0e0e0;
+    padding-top: 15px;
+}
+
+.task-modal .form-group {
+    margin-bottom: 15px;
+}
+
+.task-modal .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #333;
+}
+
+.task-modal .form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 100px;
+}
+
+.task-modal .form-group textarea:focus {
+    outline: none;
+    border-color: #007cba;
+    box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
+}
+
+.btn-info {
+    background: #17a2b8;
+    color: white;
+    border-color: #17a2b8;
+}
+
+.btn-info:hover {
+    background: #138496;
+    border-color: #117a8b;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+    border-color: #6c757d;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+    border-color: #545b62;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
 </style>
 
 <script>
@@ -1065,5 +1307,157 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }, 5000);
     }
+    
+    // Add note button event listeners
+    document.querySelectorAll('.add-note-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const taskId = this.dataset.taskId;
+            showAddNoteModal(taskId);
+        });
+    });
+    
+    // Modal close event listeners
+    document.querySelectorAll('.modal-close').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const modal = this.closest('.task-modal');
+            modal.style.display = 'none';
+        });
+    });
+    
+    // Close modal when clicking outside
+    document.querySelectorAll('.task-modal').forEach(modal => {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.style.display = 'none';
+            }
+        });
+    });
+    
+    // Escape key to close modals
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.task-modal').forEach(modal => {
+                modal.style.display = 'none';
+            });
+        }
+    });
 });
+
+// Task Notes Functions
+function showTaskNotes(taskId) {
+    fetch(`?action=get_task_notes&task_id=${taskId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayNotesModal(taskId, data.notes);
+            } else {
+                alert('Notlar yüklenemedi: ' + data.message);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Notlar yüklenirken bir hata oluştu.');
+        });
+}
+
+function displayNotesModal(taskId, notes) {
+    const modal = document.getElementById('taskNotesModal');
+    const notesList = document.getElementById('taskNotesList');
+    
+    notesList.innerHTML = '';
+    
+    notes.forEach(note => {
+        const noteDiv = document.createElement('div');
+        noteDiv.className = 'note-item';
+        noteDiv.innerHTML = `
+            <div class="note-header">
+                <strong>${note.created_by_name}</strong>
+                <span class="note-date">${note.created_at}</span>
+                ${note.can_edit ? `<button onclick="deleteTaskNote(${note.id}, ${taskId})" class="btn-delete-note"><i class="fas fa-trash"></i></button>` : ''}
+            </div>
+            <div class="note-content">${note.note_content}</div>
+        `;
+        notesList.appendChild(noteDiv);
+    });
+    
+    modal.dataset.taskId = taskId;
+    modal.style.display = 'flex';
+}
+
+function showAddNoteModal(taskId) {
+    const modal = document.getElementById('addNoteModal');
+    const textarea = document.getElementById('newNoteContent');
+    
+    textarea.value = '';
+    modal.dataset.taskId = taskId;
+    modal.style.display = 'flex';
+    textarea.focus();
+}
+
+function saveTaskNote() {
+    const modal = document.getElementById('addNoteModal');
+    const taskId = modal.dataset.taskId;
+    const content = document.getElementById('newNoteContent').value.trim();
+    
+    if (!content) {
+        alert('Lütfen not içeriği giriniz.');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('action', 'save_task_note');
+    formData.append('task_id', taskId);
+    formData.append('note_content', content);
+    formData.append('nonce', '<?php echo wp_create_nonce("task_note_nonce"); ?>');
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            closeModal('addNoteModal');
+            location.reload();
+        } else {
+            alert('Not kaydedilemedi: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Not kaydedilirken bir hata oluştu.');
+    });
+}
+
+function deleteTaskNote(noteId, taskId) {
+    if (!confirm('Bu notu silmek istediğinizden emin misiniz?')) {
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('action', 'delete_task_note');
+    formData.append('note_id', noteId);
+    formData.append('nonce', '<?php echo wp_create_nonce("task_note_nonce"); ?>');
+    
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showTaskNotes(taskId);
+        } else {
+            alert('Not silinemedi: ' + data.message);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Not silinirken bir hata oluştu.');
+    });
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+}
 </script>

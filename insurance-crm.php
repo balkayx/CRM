@@ -386,6 +386,20 @@ function insurance_crm_create_tables() {
         KEY representative_id (representative_id)
     ) $charset_collate;";
 
+    // Task notes table
+    $table_task_notes = $wpdb->prefix . 'insurance_crm_task_notes';
+    $sql_task_notes = "CREATE TABLE IF NOT EXISTS $table_task_notes (
+        id bigint(20) NOT NULL AUTO_INCREMENT,
+        task_id bigint(20) NOT NULL,
+        note_content text NOT NULL,
+        created_by bigint(20) NOT NULL,
+        created_at datetime DEFAULT CURRENT_TIMESTAMP,
+        updated_at datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY  (id),
+        KEY task_id (task_id),
+        KEY created_by (created_by)
+    ) $charset_collate;";
+
     $table_representatives = $wpdb->prefix . 'insurance_crm_representatives';
     $sql_representatives = "CREATE TABLE IF NOT EXISTS $table_representatives (
         id bigint(20) NOT NULL AUTO_INCREMENT,
@@ -507,6 +521,7 @@ function insurance_crm_create_tables() {
     dbDelta($sql_customers);
     dbDelta($sql_policies);
     dbDelta($sql_tasks);
+    dbDelta($sql_task_notes);
     dbDelta($sql_representatives);
     dbDelta($sql_import_mappings);
     dbDelta($sql_import_history);
