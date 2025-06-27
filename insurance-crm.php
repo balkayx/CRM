@@ -51,6 +51,7 @@ insurance_crm_initialize_license_settings();
 $api_file = plugin_dir_path(__FILE__) . 'includes/class-license-api.php';
 $license_manager_file = plugin_dir_path(__FILE__) . 'includes/class-license-manager.php';
 $notifications_file = plugin_dir_path(__FILE__) . 'includes/class-license-notifications.php';
+$session_manager_file = plugin_dir_path(__FILE__) . 'includes/class-session-manager.php';
 
 if (file_exists($api_file) && file_exists($license_manager_file)) {
     require_once $api_file;
@@ -59,6 +60,11 @@ if (file_exists($api_file) && file_exists($license_manager_file)) {
     // Bildirim sistemi dosyasını yükle
     if (file_exists($notifications_file)) {
         require_once $notifications_file;
+    }
+    
+    // Session manager dosyasını yükle
+    if (file_exists($session_manager_file)) {
+        require_once $session_manager_file;
     }
 
     // Plugin'in ana dosyasının tam yolunu tanımla
