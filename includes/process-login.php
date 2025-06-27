@@ -18,7 +18,7 @@ function insurance_crm_process_login() {
         }
         
         wp_set_auth_cookie($user->ID);
-        wp_redirect(home_url('/temsilci-dashboard'));
+        wp_redirect(home_url('/crm'));
         exit;
     }
 }
