@@ -57,6 +57,7 @@ class Insurance_CRM {
         $this->set_locale();
         $this->define_admin_hooks();
         $this->initialize_logging_system();
+        $this->initialize_auth_system();
     }
 
     /**
@@ -123,6 +124,20 @@ class Insurance_CRM {
         
         if (file_exists($logging_path . 'class-insurance-crm-system-logger.php')) {
             require_once $logging_path . 'class-insurance-crm-system-logger.php';
+        }
+    }
+
+    /**
+     * Initialize authentication system
+     *
+     * @since    1.4.9
+     * @access   private
+     */
+    private function initialize_auth_system() {
+        // Auth class is already loaded in load_dependencies()
+        // Now instantiate it to register the login hooks
+        if (class_exists('Insurance_CRM_Auth')) {
+            new Insurance_CRM_Auth();
         }
     }
 
