@@ -41,6 +41,139 @@ $current_user_id = get_current_user_id();
 // Yönetici yetkisini kontrol et (WordPress admin veya insurance_manager)
 $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
 
+// Handle form-based task note operations
+$notice_message = '';
+$notice_type = '';
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Handle note saving
+    if (isset($_POST['action']) && $_POST['action'] === 'save_task_note') {
+        if (isset($_POST['task_id']) && isset($_POST['note_content']) && isset($_POST['nonce'])) {
+            if (wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+                $task_id = intval($_POST['task_id']);
+                $note_content = sanitize_textarea_field($_POST['note_content']);
+                $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                
+                // Check if table exists before attempting insert
+                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                if ($table_exists != $notes_table) {
+                    $notice_message = 'Notlar tablosu bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.';
+                    $notice_type = 'error';
+                } else {
+                    $result = $wpdb->insert(
+                        $notes_table,
+                        array(
+                            'task_id' => $task_id,
+                            'note_content' => $note_content,
+                            'created_by' => $current_user_id,
+                            'created_at' => current_time('mysql')
+                        ),
+                        array('%d', '%s', '%d', '%s')
+                    );
+                    
+                    if ($result === false) {
+                        $notice_message = 'Not kaydedilemedi. Hata: ' . $wpdb->last_error;
+                        $notice_type = 'error';
+                    } else {
+                        $notice_message = 'Not başarıyla kaydedildi.';
+                        $notice_type = 'success';
+                    }
+                }
+            } else {
+                $notice_message = 'Güvenlik doğrulaması başarısız.';
+                $notice_type = 'error';
+            }
+        } else {
+            $notice_message = 'Gerekli parametreler eksik.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Handle note deletion
+    elseif (isset($_POST['action']) && $_POST['action'] === 'delete_task_note') {
+        if (isset($_POST['note_id']) && isset($_POST['nonce'])) {
+            if (wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+                $note_id = intval($_POST['note_id']);
+                $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                
+                // Check if table exists
+                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                if ($table_exists != $notes_table) {
+                    $notice_message = 'Notlar tablosu bulunamadı.';
+                    $notice_type = 'error';
+                } else {
+                    // Check if user can delete this note
+                    $note = $wpdb->get_row($wpdb->prepare("SELECT created_by FROM $notes_table WHERE id = %d", $note_id));
+                    if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
+                        $result = $wpdb->delete($notes_table, array('id' => $note_id), array('%d'));
+                        if ($result !== false) {
+                            $notice_message = 'Not başarıyla silindi.';
+                            $notice_type = 'success';
+                        } else {
+                            $notice_message = 'Not silinemedi.';
+                            $notice_type = 'error';
+                        }
+                    } else {
+                        $notice_message = 'Bu notu silme yetkiniz yok.';
+                        $notice_type = 'error';
+                    }
+                }
+            } else {
+                $notice_message = 'Güvenlik doğrulaması başarısız.';
+                $notice_type = 'error';
+            }
+        } else {
+            $notice_message = 'Gerekli parametreler eksik.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Redirect to prevent form resubmission
+    if (!empty($notice_message)) {
+        $redirect_url = add_query_arg(array(
+            'notice_message' => urlencode($notice_message),
+            'notice_type' => $notice_type
+        ), $_SERVER['REQUEST_URI']);
+        wp_redirect($redirect_url);
+        exit;
+    }
+}
+
+// Handle notice display from URL parameters
+if (isset($_GET['notice_message'])) {
+    $notice_message = urldecode($_GET['notice_message']);
+    $notice_type = isset($_GET['notice_type']) ? $_GET['notice_type'] : 'info';
+}
+
+// Function to get task notes
+function get_task_notes($task_id) {
+    global $wpdb, $current_user_id, $is_wp_admin_or_manager;
+    $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+    
+    // Check if table exists
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+    if ($table_exists != $notes_table) {
+        return array();
+    }
+    
+    $notes = $wpdb->get_results($wpdb->prepare("
+        SELECT tn.*, u.display_name as created_by_name 
+        FROM $notes_table tn 
+        LEFT JOIN {$wpdb->users} u ON tn.created_by = u.ID 
+        WHERE tn.task_id = %d 
+        ORDER BY tn.created_at DESC
+    ", $task_id));
+    
+    if ($notes) {
+        foreach ($notes as $note) {
+            $note->can_edit = ($note->created_by == $current_user_id || $is_wp_admin_or_manager);
+            $note->created_at_formatted = date('d.m.Y H:i', strtotime($note->created_at));
+        }
+    }
+    
+    return $notes ? $notes : array();
+}
+
 // --- Role Helper Functions (Adapted from dashboard4365satir.php) ---
 if (!function_exists('is_patron')) {
     function is_patron($user_id) {
@@ -284,7 +417,7 @@ $base_query = "FROM $tasks_table t
 if ($user_role_level === 1 || $user_role_level === 2 || $user_role_level === 3) {
     if (!$is_team_view) {
         // Kişisel görünüm: Sadece kendi görevlerini göster
-        $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+        $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
     }
     // Ekip görünümünde tüm görevleri görebilir (Patron, Müdür, Müdür Yardımcısı)
 } else if ($user_role_level === 4) {
@@ -302,22 +435,22 @@ if ($user_role_level === 1 || $user_role_level === 2 || $user_role_level === 3) 
             }
             
             if (!empty($valid_member_ids)) {
-                $member_placeholders = implode(',', array_fill(0, count($valid_member_ids), '%d'));
-                $base_query .= $wpdb->prepare(" AND t.representative_id IN ($member_placeholders)", ...$valid_member_ids);
+                $member_placeholders = implode(',', $valid_member_ids);
+                $base_query .= " AND t.representative_id IN ($member_placeholders)";
             } else {
-                $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+                $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
             }
         } else {
             // Ekip yoksa sadece kendi görevlerini görsün
-            $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+            $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
         }
     } else {
         // Kişisel görünüm: Sadece kendi görevlerini göster
-        $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+        $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
     }
 } else {
     // Normal müşteri temsilcisi sadece kendi görevlerini görebilir
-    $base_query .= $wpdb->prepare(" AND t.representative_id = %d", $current_user_rep_id);
+    $base_query .= " AND t.representative_id = " . intval($current_user_rep_id);
 }
 
 // İstatistik kartları için sadece kullanıcı/ekip kapsamı olan ayrı sorgu (show_completed filtresi uygulanmadan önce)
@@ -330,25 +463,20 @@ if (!$filters['show_completed']) {
 
 // Filtreleri ekle
 if (!empty($filters['customer_id'])) {
-    $base_query .= $wpdb->prepare(" AND t.customer_id = %d", $filters['customer_id']);
+    $base_query .= " AND t.customer_id = " . intval($filters['customer_id']);
 }
 if (!empty($filters['priority'])) {
-    $base_query .= $wpdb->prepare(" AND t.priority = %s", $filters['priority']);
+    $base_query .= " AND t.priority = '" . esc_sql($filters['priority']) . "'";
 }
 if (!empty($filters['status'])) {
-    $base_query .= $wpdb->prepare(" AND t.status = %s", $filters['status']);
+    $base_query .= " AND t.status = '" . esc_sql($filters['status']) . "'";
 }
 if (!empty($filters['task_title'])) {
-    $base_query .= $wpdb->prepare(
-        " AND (t.task_title LIKE %s OR c.first_name LIKE %s OR c.last_name LIKE %s OR p.policy_number LIKE %s)",
-        '%' . $wpdb->esc_like($filters['task_title']) . '%',
-        '%' . $wpdb->esc_like($filters['task_title']) . '%',
-        '%' . $wpdb->esc_like($filters['task_title']) . '%',
-        '%' . $wpdb->esc_like($filters['task_title']) . '%'
-    );
+    $escaped_title = esc_sql($filters['task_title']);
+    $base_query .= " AND (t.task_title LIKE '%{$escaped_title}%' OR c.first_name LIKE '%{$escaped_title}%' OR c.last_name LIKE '%{$escaped_title}%' OR p.policy_number LIKE '%{$escaped_title}%')";
 }
 if (!empty($filters['due_date'])) {
-    $base_query .= $wpdb->prepare(" AND DATE(t.due_date) = %s", $filters['due_date']);
+    $base_query .= " AND DATE(t.due_date) = '" . esc_sql($filters['due_date']) . "'";
 }
 
 // Zaman filtresi (bugün, bu hafta, bu ay)
@@ -356,92 +484,140 @@ if (!empty($filters['time_filter'])) {
     $today_date = date('Y-m-d');
     switch ($filters['time_filter']) {
         case 'today':
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) = %s", $today_date);
+            $base_query .= " AND DATE(t.due_date) = '" . esc_sql($today_date) . "'";
             break;
         case 'tomorrow':
             $tomorrow = date('Y-m-d', strtotime('+1 day'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) = %s", $tomorrow);
+            $base_query .= " AND DATE(t.due_date) = '" . esc_sql($tomorrow) . "'";
             break;
         case 'this_week':
             $week_start = date('Y-m-d', strtotime('monday this week'));
             $week_end = date('Y-m-d', strtotime('sunday this week'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $week_start, $week_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'";
             break;
         case 'next_week':
             $week_start = date('Y-m-d', strtotime('monday next week'));
             $week_end = date('Y-m-d', strtotime('sunday next week'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $week_start, $week_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'";
             break;
         case 'this_month':
             $month_start = date('Y-m-01');
             $month_end = date('Y-m-t');
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $month_start, $month_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($month_start) . "' AND '" . esc_sql($month_end) . "'";
             break;
         case 'next_month':
             $next_month_start = date('Y-m-01', strtotime('first day of next month'));
             $next_month_end = date('Y-m-t', strtotime('first day of next month'));
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $next_month_start, $next_month_end);
+            $base_query .= " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_month_start) . "' AND '" . esc_sql($next_month_end) . "'";
             break;
         case 'overdue':
-            $base_query .= $wpdb->prepare(" AND DATE(t.due_date) < %s AND t.status NOT IN ('completed', 'cancelled')", $today_date);
+            $base_query .= " AND DATE(t.due_date) < '" . esc_sql($today_date) . "' AND t.status NOT IN ('completed', 'cancelled')";
             break;
     }
 }
 
 // İSTATİSTİK HESAPLAMALARI
-// Toplam görev sayısı
-$total_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query);
+// Build count query base (without dynamic filters)
+$count_base = "SELECT COUNT(*) FROM $tasks_table t 
+               LEFT JOIN $customers_table c ON t.customer_id = c.id
+               LEFT JOIN $policies_table p ON t.policy_id = p.id
+               LEFT JOIN $representatives_table r ON t.representative_id = r.id
+               LEFT JOIN $users_table u ON r.user_id = u.ID
+               WHERE 1=1";
 
-// Bugünkü görevler
+// Add role-based filtering to count queries
+if ($user_role_level === 1 || $user_role_level === 2 || $user_role_level === 3) {
+    if (!$is_team_view) {
+        $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+    }
+} else if ($user_role_level === 4) {
+    if ($is_team_view) {
+        $team_member_ids = get_team_members_ids(get_current_user_id());
+        if (!empty($team_member_ids)) {
+            $valid_member_ids = array();
+            foreach ($team_member_ids as $member_id) {
+                if (!empty($member_id) && is_numeric($member_id)) {
+                    $valid_member_ids[] = (int) $member_id;
+                }
+            }
+            if (!empty($valid_member_ids)) {
+                $member_placeholders = implode(',', $valid_member_ids);
+                $count_base .= " AND t.representative_id IN ($member_placeholders)";
+            } else {
+                $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+            }
+        } else {
+            $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+        }
+    } else {
+        $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+    }
+} else {
+    $count_base .= " AND t.representative_id = " . intval($current_user_rep_id);
+}
+
+// Statistics for cards (no show_completed filter)
+$stat_count_base = $count_base;
+
+// Add show_completed filter for main statistics
+if (!$filters['show_completed']) {
+    $count_base .= " AND t.status != 'completed'";
+}
+
+// Apply static filters to count queries
+if (!empty($filters['customer_id'])) {
+    $count_base .= " AND t.customer_id = " . intval($filters['customer_id']);
+    $stat_count_base .= " AND t.customer_id = " . intval($filters['customer_id']);
+}
+if (!empty($filters['priority'])) {
+    $priority_filter = " AND t.priority = '" . esc_sql($filters['priority']) . "'";
+    $count_base .= $priority_filter;
+    $stat_count_base .= $priority_filter;
+}
+if (!empty($filters['status'])) {
+    $status_filter = " AND t.status = '" . esc_sql($filters['status']) . "'";
+    $count_base .= $status_filter;
+    $stat_count_base .= $status_filter;
+}
+
+// Calculate statistics using direct queries (no wpdb::prepare needed for static queries)
 $today_date = date('Y-m-d');
-$today_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) = %s", $today_date));
-
-// Yarınki görevler
 $tomorrow_date = date('Y-m-d', strtotime('+1 day'));
-$tomorrow_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) = %s", $tomorrow_date));
-
-// Bu haftaki görevler
 $week_start = date('Y-m-d', strtotime('monday this week'));
 $week_end = date('Y-m-d', strtotime('sunday this week'));
-$this_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $week_start, $week_end));
-
-// Gelecek haftaki görevler
 $next_week_start = date('Y-m-d', strtotime('monday next week'));
 $next_week_end = date('Y-m-d', strtotime('sunday next week'));
-$next_week_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $next_week_start, $next_week_end));
-
-// Bu ayki görevler
 $month_start = date('Y-m-01');
 $month_end = date('Y-m-t');
-$this_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $month_start, $month_end));
-
-// Gelecek ayki görevler
 $next_month_start = date('Y-m-01', strtotime('first day of next month'));
 $next_month_end = date('Y-m-t', strtotime('first day of next month'));
-$next_month_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) BETWEEN %s AND %s", $next_month_start, $next_month_end));
-
-// Gecikmiş görevler
-$overdue_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND DATE(t.due_date) < %s AND t.status NOT IN ('completed', 'cancelled')", $today_date));
-
-// Bu ay eklenen görevler
 $this_month_start_date = date('Y-m-01 00:00:00');
-$created_this_month = $wpdb->get_var("SELECT COUNT(*) " . $base_query . $wpdb->prepare(" AND t.created_at >= %s", $this_month_start_date));
 
-// Durum bazlı görev sayıları
-// İstatistik kartı için doğru tamamlanan görev sayısı (sadece kullanıcı/ekip kapsamı)
-$completed_tasks_for_stats = $wpdb->get_var("SELECT COUNT(*) " . $stat_base_query . " AND t.status = 'completed'");
-$total_tasks_for_stats = $wpdb->get_var("SELECT COUNT(*) " . $stat_base_query);
+// Execute count queries
+$total_tasks = $wpdb->get_var($count_base);
+$today_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) = '" . esc_sql($today_date) . "'");
+$tomorrow_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) = '" . esc_sql($tomorrow_date) . "'");
+$this_week_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($week_start) . "' AND '" . esc_sql($week_end) . "'");
+$next_week_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_week_start) . "' AND '" . esc_sql($next_week_end) . "'");
+$this_month_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($month_start) . "' AND '" . esc_sql($month_end) . "'");
+$next_month_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) BETWEEN '" . esc_sql($next_month_start) . "' AND '" . esc_sql($next_month_end) . "'");
+$overdue_tasks = $wpdb->get_var($count_base . " AND DATE(t.due_date) < '" . esc_sql($today_date) . "' AND t.status NOT IN ('completed', 'cancelled')");
+$created_this_month = $wpdb->get_var($count_base . " AND t.created_at >= '" . esc_sql($this_month_start_date) . "'");
 
-// Sayfa filtreleri ile birlikte durum bazlı görev sayıları (grafik için)
-$completed_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'completed'");
-$pending_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'pending'");
-$in_progress_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'in_progress'");
-$cancelled_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.status = 'cancelled'");
+// Statistics for cards
+$completed_tasks_for_stats = $wpdb->get_var($stat_count_base . " AND t.status = 'completed'");
+$total_tasks_for_stats = $wpdb->get_var($stat_count_base);
 
-// Öncelik bazlı görev sayıları
-$high_priority_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.priority = 'high'");
-$medium_priority_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.priority = 'medium'");
-$low_priority_tasks = $wpdb->get_var("SELECT COUNT(*) " . $base_query . " AND t.priority = 'low'");
+// Status counts
+$completed_tasks = $wpdb->get_var($count_base . " AND t.status = 'completed'");
+$pending_tasks = $wpdb->get_var($count_base . " AND t.status = 'pending'");
+$in_progress_tasks = $wpdb->get_var($count_base . " AND t.status = 'in_progress'");
+$cancelled_tasks = $wpdb->get_var($count_base . " AND t.status = 'cancelled'");
+
+// Priority counts
+$high_priority_tasks = $wpdb->get_var($count_base . " AND t.priority = 'high'");
+$medium_priority_tasks = $wpdb->get_var($count_base . " AND t.priority = 'medium'");
+$low_priority_tasks = $wpdb->get_var($count_base . " AND t.priority = 'low'");
 
 // Grafik verileri
 $status_chart_data = array(
@@ -493,7 +669,7 @@ $total_items = $total_tasks;
 $customers_query = "";
 if ($user_role_level === 5 || ($user_role_level === 4 && !$is_team_view)) {
     // Müşteri Temsilcisi veya Ekip Lideri (kendi görünümü) - sadece kendi müşterilerini görsün
-    $customers_query .= $wpdb->prepare(" AND c.representative_id = %d", $current_user_rep_id);
+    $customers_query .= " AND c.representative_id = " . intval($current_user_rep_id);
 } elseif ($user_role_level === 4 && $is_team_view) {
     // Ekip Lideri (ekip görünümü) - ekip üyelerinin müşterilerini görsün
     $team_member_ids = get_team_members_ids(get_current_user_id());
@@ -507,13 +683,13 @@ if ($user_role_level === 5 || ($user_role_level === 4 && !$is_team_view)) {
         }
         
         if (!empty($valid_member_ids)) {
-            $placeholders = implode(',', array_fill(0, count($valid_member_ids), '%d'));
-            $customers_query .= $wpdb->prepare(" AND c.representative_id IN ($placeholders)", ...$valid_member_ids);
+            $placeholders = implode(',', $valid_member_ids);
+            $customers_query .= " AND c.representative_id IN ($placeholders)";
         } else {
-            $customers_query .= $wpdb->prepare(" AND c.representative_id = %d", $current_user_rep_id);
+            $customers_query .= " AND c.representative_id = " . intval($current_user_rep_id);
         }
     } else {
-        $customers_query .= $wpdb->prepare(" AND c.representative_id = %d", $current_user_rep_id);
+        $customers_query .= " AND c.representative_id = " . intval($current_user_rep_id);
     }
 }
 
@@ -591,6 +767,13 @@ function get_role_name($role_level) {
 <div class="modern-crm-container" id="tasks-container" <?php echo !$show_list ? 'style="display:none;"' : ''; ?>>
     
     <?php echo $notice; ?>
+    
+    <?php if (!empty($notice_message)): ?>
+        <div class="notification-banner notification-<?php echo $notice_type; ?>">
+            <i class="fas fa-<?php echo $notice_type === 'success' ? 'check-circle' : 'exclamation-triangle'; ?>"></i>
+            <span><?php echo esc_html($notice_message); ?></span>
+        </div>
+    <?php endif; ?>
     
     <!-- Header Section -->
     <header class="crm-header">
@@ -976,9 +1159,31 @@ function get_role_name($role_level) {
                         ?>
                         <tr class="<?php echo trim($row_class); ?>" data-task-id="<?php echo $task->id; ?>">
                             <td class="task-title" data-label="Görev">
-                                <a href="?view=tasks&action=view&id=<?php echo $task->id; ?>" class="task-link">
-                                    <?php echo esc_html($task->task_title); ?>
-                                </a>
+                                <div class="task-title-container">
+                                    <a href="?view=tasks&action=view&id=<?php echo $task->id; ?>" class="task-link">
+                                        <?php echo esc_html($task->task_title); ?>
+                                    </a>
+                                    <?php 
+                                    // Check if task has notes (only if table exists)
+                                    $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                                    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                                    $note_count = 0;
+                                    
+                                    if ($table_exists == $notes_table) {
+                                        $note_count = $wpdb->get_var($wpdb->prepare(
+                                            "SELECT COUNT(*) FROM {$notes_table} WHERE task_id = %d",
+                                            $task->id
+                                        ));
+                                    }
+                                    
+                                    if ($note_count > 0): ?>
+                                        <span class="task-notes-indicator" title="Bu görevde <?php echo $note_count; ?> not bulunuyor" 
+                                              onclick="showTaskNotes(<?php echo $task->id; ?>)">
+                                            <i class="fas fa-comment-dots"></i>
+                                            <span class="note-count"><?php echo $note_count; ?></span>
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
                                 <div class="task-badges">
                                     <?php if ($is_overdue): ?>
                                     <span class="badge overdue">Gecikmiş!</span>
@@ -1088,6 +1293,12 @@ function get_role_name($role_level) {
                                             <i class="fas fa-trash"></i>
                                         </a>
                                         <?php endif; ?>
+                                        
+                                        <!-- Add Note Button -->
+                                        <button type="button" class="btn btn-xs btn-info add-note-btn" 
+                                                title="Not Ekle" data-task-id="<?php echo $task->id; ?>">
+                                            <i class="fas fa-sticky-note"></i>
+                                        </button>
                                     </div>
                                 </div>
                             </td>
@@ -1129,6 +1340,86 @@ function get_role_name($role_level) {
         </div>
         <?php endif; ?>
     </section>
+</div>
+
+<!-- Task Notes Modals -->
+<div id="taskNotesModal" class="task-modal" style="display: <?php echo isset($_GET['view_notes']) ? 'flex' : 'none'; ?>;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-sticky-note"></i> Görev Notları</h3>
+            <button class="modal-close" onclick="closeModal('taskNotesModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body">
+            <div id="taskNotesList" class="notes-list">
+                <?php if (isset($_GET['view_notes'])): 
+                    $view_task_id = intval($_GET['view_notes']);
+                    $task_notes = get_task_notes($view_task_id);
+                    if (!empty($task_notes)): 
+                        foreach ($task_notes as $note): ?>
+                            <div class="note-item">
+                                <div class="note-header">
+                                    <strong><?php echo esc_html($note->created_by_name); ?></strong>
+                                    <span class="note-date"><?php echo esc_html($note->created_at_formatted); ?></span>
+                                    <?php if ($note->can_edit): ?>
+                                        <form method="post" style="display: inline;" onsubmit="return confirm('Bu notu silmek istediğinizden emin misiniz?');">
+                                            <input type="hidden" name="action" value="delete_task_note">
+                                            <input type="hidden" name="note_id" value="<?php echo $note->id; ?>">
+                                            <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+                                            <button type="submit" class="btn-delete-note">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="note-content"><?php echo esc_html($note->note_content); ?></div>
+                            </div>
+                        <?php endforeach;
+                    else: ?>
+                        <div class="note-item">
+                            <div class="note-content">Bu görev için henüz not eklenmemiş.</div>
+                        </div>
+                    <?php endif;
+                endif; ?>
+            </div>
+            <div class="notes-actions">
+                <button type="button" class="btn btn-primary" onclick="showAddNoteModal(<?php echo isset($_GET['view_notes']) ? intval($_GET['view_notes']) : '0'; ?>)">
+                    <i class="fas fa-plus"></i> Yeni Not Ekle
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="addNoteModal" class="task-modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3><i class="fas fa-sticky-note"></i> Yeni Not Ekle</h3>
+            <button class="modal-close" onclick="closeModal('addNoteModal')">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <form method="post" action="">
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="newNoteContent">Not İçeriği:</label>
+                    <textarea name="note_content" id="newNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('addNoteModal')">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save"></i> Kaydet
+                </button>
+            </div>
+            <input type="hidden" name="action" value="save_task_note">
+            <input type="hidden" name="task_id" id="addNoteTaskId" value="">
+            <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+        </form>
+    </div>
 </div>
 
 <?php
@@ -2641,6 +2932,225 @@ if (isset($_GET['action'])) {
         display: none;
     }
 }
+
+/* Task Notes Styles */
+.task-title-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.task-notes-indicator {
+    background: #ff9800;
+    color: white;
+    border-radius: 12px;
+    padding: 2px 6px;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    min-width: 20px;
+    height: 20px;
+    justify-content: center;
+}
+
+.task-notes-indicator:hover {
+    background: #f57c00;
+    transform: scale(1.1);
+}
+
+.note-count {
+    font-weight: bold;
+    font-size: 10px;
+}
+
+/* Modal Styles */
+.task-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.task-modal .modal-content {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    width: 90%;
+    max-width: 600px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    animation: slideIn 0.3s ease;
+}
+
+.task-modal .modal-header {
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #f8f9fa;
+    border-radius: 12px 12px 0 0;
+}
+
+.task-modal .modal-header h3 {
+    margin: 0;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: #666;
+    padding: 5px;
+    border-radius: 4px;
+}
+
+.modal-close:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: #333;
+}
+
+.task-modal .modal-body {
+    padding: 20px;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.task-modal .modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    background: #f8f9fa;
+    border-radius: 0 0 12px 12px;
+}
+
+/* Notes List Styles */
+.notes-list {
+    margin-bottom: 20px;
+}
+
+.note-item {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #666;
+}
+
+.note-header strong {
+    color: #333;
+    font-size: 14px;
+}
+
+.note-date {
+    color: #888;
+}
+
+.btn-delete-note {
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-delete-note:hover {
+    background: #c82333;
+}
+
+.note-content {
+    color: #333;
+    line-height: 1.6;
+    white-space: pre-line;
+    font-size: 14px;
+}
+
+.notes-actions {
+    border-top: 1px solid #e0e0e0;
+    padding-top: 15px;
+}
+
+/* Form Styles */
+.task-modal .form-group {
+    margin-bottom: 15px;
+}
+
+.task-modal .form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #333;
+}
+
+.task-modal .form-group textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 100px;
+}
+
+.task-modal .form-group textarea:focus {
+    outline: none;
+    border-color: #007cba;
+    box-shadow: 0 0 0 2px rgba(0, 124, 186, 0.1);
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-50px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .task-modal .modal-content {
+        width: 95%;
+        margin: 10px;
+    }
+    
+    .task-notes-indicator {
+        font-size: 10px;
+        padding: 1px 4px;
+        gap: 2px;
+    }
+}
 </style>
 
 <script>
@@ -3245,9 +3755,64 @@ function updatePerPage(newPerPage) {
     window.location.href = url.toString();
 }
 
+// Task Notes Functionality
+function showTaskNotes(taskId) {
+    // Navigate to the same page with view_notes parameter
+    const url = new URL(window.location.href);
+    url.searchParams.set('view_notes', taskId);
+    window.location.href = url.toString();
+}
+
+function showAddNoteModal(taskId) {
+    const modal = document.getElementById('addNoteModal');
+    const textarea = document.getElementById('newNoteContent');
+    const taskIdInput = document.getElementById('addNoteTaskId');
+    
+    textarea.value = '';
+    taskIdInput.value = taskId;
+    modal.style.display = 'flex';
+    textarea.focus();
+}
+
+function closeModal(modalId) {
+    document.getElementById(modalId).style.display = 'none';
+    
+    // If closing task notes modal, remove the view_notes parameter from URL
+    if (modalId === 'taskNotesModal') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('view_notes');
+        window.history.replaceState({}, document.title, url.toString());
+    }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize the app
     window.modernTasksApp = new ModernTasksApp();
+    
+    // Add note button event listeners
+    document.querySelectorAll('.add-note-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const taskId = this.dataset.taskId;
+            showAddNoteModal(taskId);
+        });
+    });
+    
+    // Modal close event listeners
+    document.querySelectorAll('.modal-close').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const modal = this.closest('.task-modal');
+            modal.style.display = 'none';
+        });
+    });
+    
+    // Close modal when clicking outside
+    document.querySelectorAll('.task-modal').forEach(modal => {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.style.display = 'none';
+            }
+        });
+    });
     
     // Add keyboard shortcuts help
     document.addEventListener('keydown', (e) => {
@@ -3258,6 +3823,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 'info', 
                 8000
             );
+        }
+        
+        if (e.key === 'Escape') {
+            document.querySelectorAll('.task-modal').forEach(modal => {
+                modal.style.display = 'none';
+            });
         }
     });
 });
