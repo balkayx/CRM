@@ -42,7 +42,7 @@ if (!function_exists('get_current_user_rep_data')) {
         global $wpdb;
         $current_user_id = get_current_user_id();
         return $wpdb->get_row($wpdb->prepare(
-            "SELECT id, role, customer_edit, customer_delete, policy_edit, policy_delete, task_edit, task_delete 
+            "SELECT id, role, customer_edit, customer_delete, policy_edit, policy_delete 
              FROM {$wpdb->prefix}insurance_crm_representatives 
              WHERE user_id = %d AND status = 'active'",
             $current_user_id
@@ -208,7 +208,8 @@ if (isset($_GET['notice_message'])) {
 }
 
 // Function to get task notes
-function get_task_notes($task_id) {
+if (!function_exists('get_task_notes')) {
+    function get_task_notes($task_id) {
     global $wpdb, $current_user_id, $is_wp_admin_or_manager;
     $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
     
@@ -234,6 +235,7 @@ function get_task_notes($task_id) {
     }
     
     return $notes ? $notes : array();
+}
 }
 
 // --- Role Helper Functions (Adapted from dashboard4365satir.php) ---
@@ -337,10 +339,9 @@ $is_team_view = ($current_view === 'team');
 // Görev düzenleme/silme yetki kontrolü için rep_permissions al
 $current_rep = get_current_user_rep_data();
 
-// Görev silme işlemi (Patron, Müdür veya task_edit yetkisi olan kullanıcılar silebilir)
+// Görev silme işlemi (Patron, Müdür veya admin kullanıcılar silebilir)
 $can_delete_tasks = $is_wp_admin_or_manager || 
-                   ($current_rep && ($current_rep->role == 1 || $current_rep->role == 2)) ||
-                   ($current_rep && isset($current_rep->task_edit) && $current_rep->task_edit == 1);
+                   ($current_rep && ($current_rep->role == 1 || $current_rep->role == 2));
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $task_id = intval($_GET['id']);
     if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'delete_task_' . $task_id)) {

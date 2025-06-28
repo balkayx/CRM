@@ -197,7 +197,8 @@ if (isset($_GET['notice_message'])) {
 }
 
 // Function to get task notes
-function get_task_notes($task_id) {
+if (!function_exists('get_task_notes')) {
+    function get_task_notes($task_id) {
     global $wpdb;
     $current_user_id = get_current_user_id();
     $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
@@ -229,6 +230,7 @@ function get_task_notes($task_id) {
     }
     
     return $notes;
+}
 }
 
 // Görev son tarih kontrolü
