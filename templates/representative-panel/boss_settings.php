@@ -174,7 +174,7 @@ if (!isset($settings['update_announcements'])) {
 </ul>
 <h3><i class="fas fa-cog"></i> Yönetici Duyuru Sistemi</h3>
 <p>Yöneticiler artık ayarlar bölümünden güncelleme duyuruları yayınlayabilir ve tüm kullanıcılara otomatik olarak gösterebilir.</p>',
-        'version' => '1.8.3',
+        'version' => '1.9.5',
         'show_to_all' => false,
         'last_updated' => current_time('mysql')
     );
@@ -875,7 +875,7 @@ $total_task_types = count($settings['default_task_types']);
                             <div class="form-group">
                                 <label for="announcement_version">Versiyon</label>
                                 <input type="text" name="announcement_version" id="announcement_version" class="form-control" 
-                                       value="<?php echo esc_attr(isset($settings['update_announcements']['version']) ? $settings['update_announcements']['version'] : '1.9.4'); ?>"
+                                       value="<?php echo esc_attr(isset($settings['update_announcements']['version']) ? $settings['update_announcements']['version'] : '1.9.5'); ?>"
                                        placeholder="Örn: 1.8.3">
                                 <div class="form-hint">Bu versiyonu daha önce gören kullanıcılara tekrar gösterilmeyecek</div>
                             </div>
@@ -1785,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function previewAnnouncement() {
     const title = document.getElementById('announcement_title').value || 'Önizleme Başlığı';
     const content = document.getElementById('announcement_content').value || 'Önizleme içeriği...';
-    const version = document.getElementById('announcement_version').value || '1.9.4';
+    const version = document.getElementById('announcement_version').value || '1.9.5';
     
     // Create modal HTML
     const modalHTML = `
@@ -1794,22 +1794,24 @@ function previewAnnouncement() {
                 <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 20px 20px 0 0; text-align: center;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
                         <div></div>
-                        <div style="background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 500;">
-                            v${version}
-                        </div>
                         <button onclick="closeAnnouncementPreview()" style="background: none; border: none; color: white; font-size: 24px; cursor: pointer; padding: 0; line-height: 1;">&times;</button>
                     </div>
                     <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-                        <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 50%; margin-right: 20px;">
-                            <i class="fas fa-rocket" style="font-size: 40px;"></i>
+                        <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 50%; margin-right: 20px;">
+                            <i class="fas fa-rocket" style="font-size: 28px;"></i>
                         </div>
-                        <div>
-                            <h2 style="margin: 0; font-size: 24px; font-weight: 600;">${title}</h2>
+                        <div style="display: flex; flex-direction: column; align-items: flex-start;">
+                            <div style="display: flex; align-items: center; gap: 15px;">
+                                <h2 style="margin: 0; font-size: 24px; font-weight: 600;">${title}</h2>
+                                <div style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 15px; font-size: 12px; font-weight: 500;">
+                                    v${version}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div style="padding: 30px;">
-                    <div style="color: #4a5568; line-height: 1.6; font-size: 16px;">
+                    <div style="color: #4a5568; line-height: 1.6; font-size: 14px;">
                         ${content}
                     </div>
                     <div style="margin-top: 30px; text-align: center;">

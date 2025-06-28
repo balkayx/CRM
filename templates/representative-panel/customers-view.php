@@ -832,40 +832,32 @@ function can_edit_customer_view($customer) {
     $settings = get_option('insurance_crm_settings', array());
     $allow_customer_details_access = isset($settings['permission_settings']['allow_customer_details_access']) && $settings['permission_settings']['allow_customer_details_access'];
     
-    // Eğer genel erişim açıksa, müşteri düzenleme yapılamaz (sadece görüşme notu eklenebilir)
-    if ($allow_customer_details_access) {
-        // Sadece Patron her zaman düzenleyebilir (yönetim yetkisi)
-        if ($rep_data->role == 1) return true;
-        
-        // Diğer kullanıcılar düzenleyemez, sadece görüşme notu ekleyebilir
-        return false;
-    }
-    
-    // Genel erişim kapalıysa, normal yetki kontrolü
-    // Rol kontrolü yap
-    if ($rep_data->role == 1) { // Patron
+    // Patron ve Müdür her zaman düzenleyebilir (yönetim yetkisi)
+    if ($rep_data->role == 1 || $rep_data->role == 2) {
         return true;
     }
     
-    if ($rep_data->role == 2 && $rep_data->customer_edit == 1) { // Müdür + düzenleme yetkisi var
+    // Müdür Yardımcısı + düzenleme yetkisi var
+    if ($rep_data->role == 3 && $rep_data->customer_edit == 1) {
         return true;
     }
     
-    if ($rep_data->role == 3 && $rep_data->customer_edit == 1) { // Müdür Yardımcısı + düzenleme yetkisi var
-        return true;
-    }
-    
-    if ($rep_data->role == 4 && $rep_data->customer_edit == 1) { // Ekip Lideri + düzenleme yetkisi var
+    // Ekip Lideri + düzenleme yetkisi var
+    if ($rep_data->role == 4 && $rep_data->customer_edit == 1) {
         // Ekip liderinin kendi ekibi kontrolü
         if (function_exists('get_team_members')) {
             $members = get_team_members($current_user_id);
             return in_array($customer->representative_id, $members);
         }
+        return true; // Eğer get_team_members fonksiyonu yoksa, sadece yetkisi varsa izin ver
     }
     
-    // Temsilci sadece kendi müşterilerini düzenleyebilir
-    if ($rep_data->role == 5 && $customer && $customer->representative_id == $rep_data->id) {
-        return true;
+    // Temsilci için düzenleme yetkisi kontrolü
+    if ($rep_data->role == 5 && $rep_data->customer_edit == 1) {
+        // Sadece kendi müşterilerini düzenleyebilir
+        if ($customer && $customer->representative_id == $rep_data->id) {
+            return true;
+        }
     }
     
     return false;
