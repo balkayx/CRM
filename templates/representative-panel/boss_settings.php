@@ -875,7 +875,7 @@ $total_task_types = count($settings['default_task_types']);
                             <div class="form-group">
                                 <label for="announcement_version">Versiyon</label>
                                 <input type="text" name="announcement_version" id="announcement_version" class="form-control" 
-                                       value="<?php echo esc_attr(isset($settings['update_announcements']['version']) ? $settings['update_announcements']['version'] : '1.9.1'); ?>"
+                                       value="<?php echo esc_attr(isset($settings['update_announcements']['version']) ? $settings['update_announcements']['version'] : '1.9.4'); ?>"
                                        placeholder="Örn: 1.8.3">
                                 <div class="form-hint">Bu versiyonu daha önce gören kullanıcılara tekrar gösterilmeyecek</div>
                             </div>
@@ -1785,7 +1785,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function previewAnnouncement() {
     const title = document.getElementById('announcement_title').value || 'Önizleme Başlığı';
     const content = document.getElementById('announcement_content').value || 'Önizleme içeriği...';
-    const version = document.getElementById('announcement_version').value || '1.8.3';
+    const version = document.getElementById('announcement_version').value || '1.9.4';
     
     // Create modal HTML
     const modalHTML = `

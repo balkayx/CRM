@@ -1245,15 +1245,24 @@ $restore_response = null;
 if (isset($_GET['action']) && $_GET['action'] === 'restore' && isset($_GET['id'])) {
     $policy_id = intval($_GET['id']);
     
-    // Verify nonce
-    if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'restore_policy_' . $policy_id)) {
-        $restore_response = $policy_manager->handlePolicyRestore($policy_id);
-    } else {
+    // Check permissions first
+    if (!function_exists('can_restore_deleted_policies') || !can_restore_deleted_policies()) {
         $restore_response = [
             'success' => false,
-            'message' => 'Güvenlik doğrulaması başarısız oldu.',
+            'message' => 'Bu işlem için yetkiniz bulunmamaktadır.',
             'type' => 'error'
         ];
+    } else {
+        // Verify nonce
+        if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'restore_policy_' . $policy_id)) {
+            $restore_response = $policy_manager->handlePolicyRestore($policy_id);
+        } else {
+            $restore_response = [
+                'success' => false,
+                'message' => 'Güvenlik doğrulaması başarısız oldu.',
+                'type' => 'error'
+            ];
+        }
     }
 }
 
@@ -2148,7 +2157,7 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
         <!-- Tüm İşlem Butonları Tek Satırda -->
         <div class="all-actions">
             <?php if ($policy_manager->isShowDeletedMode()): ?>
-                <?php if ($policy_manager->getUserRoleLevel() <= 2): ?>
+                <?php if (function_exists('can_restore_deleted_policies') && can_restore_deleted_policies()): ?>
                 <a href="<?php echo wp_nonce_url('?view=policies&action=restore&id=' . $policy->id, 'restore_policy_' . $policy->id); ?>" 
                    class="btn btn-xs btn-success" title="Geri Getir" onclick="return confirm('Bu poliçeyi geri getirmek istediğinizden emin misiniz?');">
                     <i class="fas fa-trash-restore"></i>

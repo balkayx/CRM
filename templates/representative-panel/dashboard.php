@@ -1595,7 +1595,7 @@ $announcements = isset($announcement_settings['update_announcements']) ? $announ
 $show_announcements = isset($announcements['enabled']) && $announcements['enabled'];
 $announcement_title = isset($announcements['title']) ? $announcements['title'] : 'Sistem Güncellemeleri';
 $announcement_content = isset($announcements['content']) ? $announcements['content'] : '';
-$announcement_version = isset($announcements['version']) ? $announcements['version'] : '1.9.1';
+$announcement_version = isset($announcements['version']) ? $announcements['version'] : '1.9.4';
 
 // Check if user just logged in
 $current_user_id = get_current_user_id();

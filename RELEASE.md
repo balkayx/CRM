@@ -1,6 +1,36 @@
 # Sürüm Notları
 
-## Versiyon 1.8.9 (27.06.2025)
+## Versiyon 1.9.4 (29.06.2025)
+
+### 🎯 Kritik Düzeltmeler
+
+- **Silinmiş Poliçe Görüntüleme Düzeltildi:** "Silinmiş Poliçeleri Göster" butonu artık kullanıcı bazlı yetki sisteminde doğru çalışıyor
+  - Patron ve Müdür: Otomatik erişim
+  - Diğer roller: "Silinmiş Poliçeleri Görüntüleme" yetkisi gerekli
+
+- **Silinen Poliçe Geri Getirme Düzeltildi:** Poliçe geri getirme işlemi artık kullanıcı bazlı yetki kontrolü ile çalışıyor
+  - "Silinmiş Poliçeyi Geri Getirebilir" yetkisi olan kullanıcılar geri getirme işlemi yapabilir
+
+### 🔧 Teknik İyileştirmeler
+
+- **Eksik Yetki Fonksiyonları Eklendi:**
+  - `can_view_deleted_policies()` - Silinmiş poliçeleri görüntüleme yetkisi
+  - `can_restore_deleted_policies()` - Silinmiş poliçeleri geri getirme yetkisi
+
+- **Güncelleme Duyuru Sistemi İyileştirildi:**
+  - Varsayılan versiyon güncellendi (1.9.1 → 1.9.4)
+  - Login sonrası popup gösterimi optimize edildi
+  - localStorage ile versiyon takibi geliştirildi
+
+### 📊 Kullanıcı Deneyimi
+
+- **Yetki Kontrolü Tutarlılığı:** Artık tüm poliçe işlemleri (görüntüleme, silme, geri getirme) aynı yetki sistemi üzerinden çalışıyor
+- **Hata Mesajları:** Yetkisiz işlemler için daha açıklayıcı hata mesajları eklendi
+- **Güvenlik:** Geri getirme işlemleri için güçlü yetki kontrolleri eklendi
+
+---
+
+## Versiyon 1.9.3 (Önceki Sürümler)
 
 ### ✨ Yeni Özellikler
 

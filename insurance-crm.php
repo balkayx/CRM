@@ -10,7 +10,7 @@
  * Plugin Name: Insurance CRM
  * Plugin URI: https://github.com/anadolubirlik/insurance-crm
  * Description: Sigorta acenteleri için müşteri, poliçe ve görev yönetim sistemi.
- * Version: 1.9.3
+ * Version: 1.9.4
  * Pagename: insurance-crm.php
  * Page Version: 1.9.3
  * Author: Mehmet BALKAY | Anadolu Birlik
@@ -1090,6 +1090,14 @@ function can_change_policy_representative() {
 
 function can_change_task_representative() {
     return has_user_permission('can_change_task_representative');
+}
+
+function can_view_deleted_policies() {
+    return has_user_permission('can_view_deleted_policies');
+}
+
+function can_restore_deleted_policies() {
+    return has_user_permission('can_restore_deleted_policies');
 }
 
 /**
