@@ -1753,24 +1753,36 @@ function showVersionNotification() {
     const currentVersion = '<?php echo esc_js($announcement_version); ?>';
     const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
     
+    console.log('Version check - Current:', currentVersion);
+    console.log('Version check - ViewedKey:', viewedKey);
+    console.log('Version check - Previously viewed:', localStorage.getItem(viewedKey));
+    
     // Check if this version notification has been viewed
     <?php if (isset($announcements['show_to_all']) && $announcements['show_to_all']): ?>
     // Show to all users after login - don't check localStorage  
+    console.log('Showing popup to all users');
     const modal = document.getElementById('versionNotificationModal');
-    modal.style.display = 'block';
-    // Add a slight delay for smooth animation
-    setTimeout(() => {
-        modal.style.opacity = '1';
-    }, 50);
-    <?php else: ?>
-    // Only show if not viewed before and user just logged in
-    if (!localStorage.getItem(viewedKey)) {
-        const modal = document.getElementById('versionNotificationModal');
+    if (modal) {
         modal.style.display = 'block';
         // Add a slight delay for smooth animation
         setTimeout(() => {
             modal.style.opacity = '1';
         }, 50);
+    }
+    <?php else: ?>
+    // Only show if not viewed before and user just logged in
+    if (!localStorage.getItem(viewedKey)) {
+        console.log('Showing popup for new version');
+        const modal = document.getElementById('versionNotificationModal');
+        if (modal) {
+            modal.style.display = 'block';
+            // Add a slight delay for smooth animation
+            setTimeout(() => {
+                modal.style.opacity = '1';
+            }, 50);
+        }
+    } else {
+        console.log('Version already viewed, not showing popup');
     }
     <?php endif; ?>
     <?php endif; ?>
@@ -1781,15 +1793,19 @@ function closeVersionModal() {
     const currentVersion = '<?php echo esc_js($announcement_version); ?>';
     const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
     
+    console.log('Closing modal and marking version as viewed:', viewedKey);
+    
     // Mark this version as viewed
     localStorage.setItem(viewedKey, 'true');
     
     // Smooth hide animation
     const modal = document.getElementById('versionNotificationModal');
-    modal.style.opacity = '0';
-    setTimeout(() => {
-        modal.style.display = 'none';
-    }, 300);
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 300);
+    }
     <?php endif; ?>
 }
 

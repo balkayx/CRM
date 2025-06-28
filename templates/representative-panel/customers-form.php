@@ -898,14 +898,13 @@ function get_allowed_file_types_text() {
                         </div>
                         
                         <?php 
-                        $user_role = get_current_user_role();
-                        $is_patron_or_manager = ($user_role == 1 || $user_role == 2); // 1: Patron, 2: Müdür
+                        $can_change_rep = can_change_customer_representative();
                         ?>
                         
                         <!-- Müşteri Temsilcisi alanı - tüm roller için göster -->
                         <div class="ab-form-group">
                             <label for="representative_id">Müşteri Temsilcisi</label>
-                            <?php if ($is_patron_or_manager): ?>
+                            <?php if ($can_change_rep): ?>
                                 <select name="representative_id" id="representative_id" class="ab-select">
                                     <option value="">Temsilci Seçin</option>
                                     <?php foreach ($representatives as $rep): ?>
@@ -914,21 +913,21 @@ function get_allowed_file_types_text() {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="ab-form-help">Sadece Patron ve Müdür bu alanı değiştirebilir.</div>
+                                <div class="ab-form-help">Müşteri temsilcisi değiştirme yetkisi ile düzenleyebilirsiniz.</div>
                             <?php else: ?>
                                 <input type="text" 
                                        value="<?php echo $editing && !empty($customer->representative_id) ? esc_attr(get_representative_name($customer->representative_id)) : 'Atanmamış'; ?>" 
                                        class="ab-input" 
                                        readonly 
                                        style="background-color: #f7f7f7;" />
-                                <div class="ab-form-help">Bu alan sadece Patron ve Müdür tarafından değiştirilebilir.</div>
+                                <div class="ab-form-help">Müşteri temsilcisi değiştirmek için yetkiniz bulunmuyor.</div>
                             <?php endif; ?>
                         </div>
                         
                         <!-- İlk Kayıt Eden alanı -->
                         <div class="ab-form-group">
                             <label for="ilk_kayit_eden">İlk Kayıt Eden</label>
-                            <?php if ($is_patron_or_manager): ?>
+                            <?php if ($can_change_rep): ?>
                                 <select name="ilk_kayit_eden" id="ilk_kayit_eden" class="ab-select">
                                     <option value="">Seçiniz</option>
                                     <?php foreach ($representatives as $rep): ?>
@@ -937,14 +936,14 @@ function get_allowed_file_types_text() {
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="ab-form-help">Sadece Patron ve Müdür bu alanı değiştirebilir.</div>
+                                <div class="ab-form-help">Müşteri temsilcisi değiştirme yetkisi ile düzenleyebilirsiniz.</div>
                             <?php else: ?>
                                 <input type="text" 
                                        value="<?php echo $editing && !empty($customer->first_registrar_name) ? esc_attr($customer->first_registrar_name . ($customer->first_registrar_title ? ' (' . $customer->first_registrar_title . ')' : '')) : 'Belirtilmemiş'; ?>" 
                                        class="ab-input" 
                                        readonly 
                                        style="background-color: #f7f7f7;" />
-                                <div class="ab-form-help">Bu alan sadece Patron ve Müdür tarafından değiştirilebilir.</div>
+                                <div class="ab-form-help">İlk kayıt eden temsilcisini değiştirmek için yetkiniz bulunmuyor.</div>
                             <?php endif; ?>
                         </div>
                     </div>

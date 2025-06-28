@@ -10,9 +10,9 @@
  * Plugin Name: Insurance CRM
  * Plugin URI: https://github.com/anadolubirlik/insurance-crm
  * Description: Sigorta acenteleri için müşteri, poliçe ve görev yönetim sistemi.
- * Version: 1.9.1
+ * Version: 1.9.2
  * Pagename: insurance-crm.php
- * Page Version: 1.9.1
+ * Page Version: 1.9.2
  * Author: Mehmet BALKAY | Anadolu Birlik
  * Author URI: https://www.balkay.net
  */
@@ -1048,6 +1048,49 @@ function insurance_crm_update_check() {
     }
 }
 add_action('plugins_loaded', 'insurance_crm_update_check');
+
+/**
+ * User-based permission helper functions
+ * @since 1.9.2
+ */
+function has_user_permission($permission_name) {
+    global $wpdb;
+    $current_user_rep_id = function_exists('get_current_user_rep_id') ? get_current_user_rep_id() : 0;
+    
+    if (!$current_user_rep_id) {
+        return false;
+    }
+    
+    $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
+    $user_data = $wpdb->get_row($wpdb->prepare(
+        "SELECT role, $permission_name FROM $representatives_table WHERE id = %d",
+        $current_user_rep_id
+    ));
+    
+    if (!$user_data) {
+        return false;
+    }
+    
+    // Patron (1) and Müdür (2) have full permissions
+    if ($user_data->role == 1 || $user_data->role == 2) {
+        return true;
+    }
+    
+    // Check individual permission
+    return $user_data->$permission_name == 1;
+}
+
+function can_change_customer_representative() {
+    return has_user_permission('can_change_customer_representative');
+}
+
+function can_change_policy_representative() {
+    return has_user_permission('can_change_policy_representative');
+}
+
+function can_change_task_representative() {
+    return has_user_permission('can_change_task_representative');
+}
 
 /**
  * 1.0.3 versiyonu için gerekli dosyaları oluştur

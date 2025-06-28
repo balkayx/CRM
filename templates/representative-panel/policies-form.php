@@ -1724,7 +1724,7 @@ if ($user_role == 1 || $user_role == 2):
                             </div>
                         </div>
                         
-                        <?php if (is_patron_or_manager()): ?>
+                        <?php if (can_change_policy_representative()): ?>
                         <div class="ab-form-row">
                             <div class="ab-form-group ab-full-width">
                                 <label for="customer_representative_id">
@@ -1740,7 +1740,22 @@ if ($user_role == 1 || $user_role == 2):
                                         </option>
                                     <?php endforeach; ?>
                                 </select>
-                                <div class="ab-form-help"><i class="fas fa-info-circle"></i> Bu alan sadece Patron ve Müdür tarafından düzenlenebilir.</div>
+                                <div class="ab-form-help"><i class="fas fa-info-circle"></i> Poliçe temsilcisi değiştirme yetkisi ile düzenleyebilirsiniz.</div>
+                            </div>
+                        </div>
+                        <?php else: ?>
+                        <div class="ab-form-row">
+                            <div class="ab-form-group ab-full-width">
+                                <label for="customer_representative_display">
+                                    <i class="fas fa-user-tie"></i>
+                                    Müşteri Temsilcisi
+                                </label>
+                                <input type="text" 
+                                       value="<?php echo isset($policy) && !empty($policy->representative_id) ? esc_attr(get_representative_name($policy->representative_id)) : 'Atanmamış'; ?>" 
+                                       class="ab-input" 
+                                       readonly 
+                                       style="background-color: #f7f7f7;" />
+                                <div class="ab-form-help"><i class="fas fa-info-circle"></i> Poliçe temsilcisi değiştirmek için yetkiniz bulunmuyor.</div>
                             </div>
                         </div>
                         <?php endif; ?>
