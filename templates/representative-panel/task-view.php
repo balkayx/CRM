@@ -70,6 +70,167 @@ if (!$task) {
     return;
 }
 
+// Task note CRUD operations
+if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'edit_task_note', 'delete_task_note']) && isset($_POST['nonce']) && wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+    $current_user_id = get_current_user_id();
+    $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
+    
+    if ($_POST['action'] == 'save_task_note' && isset($_POST['task_id']) && isset($_POST['note_content'])) {
+        $task_id = intval($_POST['task_id']);
+        $note_content = sanitize_textarea_field($_POST['note_content']);
+        
+        if (!empty($note_content)) {
+            $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+            
+            // Check if table exists before attempting insert
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+            if ($table_exists != $notes_table) {
+                $notice_message = 'Notlar tablosu bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.';
+                $notice_type = 'error';
+            } else {
+                $result = $wpdb->insert(
+                    $notes_table,
+                    array(
+                        'task_id' => $task_id,
+                        'note_content' => $note_content,
+                        'created_by' => $current_user_id,
+                        'created_at' => current_time('mysql')
+                    ),
+                    array('%d', '%s', '%d', '%s')
+                );
+                
+                if ($result === false) {
+                    $notice_message = 'Not kaydedilemedi. Hata: ' . $wpdb->last_error;
+                    $notice_type = 'error';
+                } else {
+                    $notice_message = 'Not başarıyla kaydedildi.';
+                    $notice_type = 'success';
+                }
+            }
+        } else {
+            $notice_message = 'Not içeriği boş olamaz.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Handle edit task note
+    if ($_POST['action'] == 'edit_task_note' && isset($_POST['note_id']) && isset($_POST['note_content'])) {
+        $note_id = intval($_POST['note_id']);
+        $note_content = sanitize_textarea_field($_POST['note_content']);
+        
+        if (!empty($note_content)) {
+            $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+            
+            // Check if user can edit this note
+            $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
+            if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
+                $result = $wpdb->update(
+                    $notes_table,
+                    array(
+                        'note_content' => $note_content,
+                        'updated_at' => current_time('mysql')
+                    ),
+                    array('id' => $note_id),
+                    array('%s', '%s'),
+                    array('%d')
+                );
+                
+                if ($result === false) {
+                    $notice_message = 'Not güncellenemedi. Hata: ' . $wpdb->last_error;
+                    $notice_type = 'error';
+                } else {
+                    $notice_message = 'Not başarıyla güncellendi.';
+                    $notice_type = 'success';
+                }
+            } else {
+                $notice_message = 'Bu notu düzenleme yetkiniz bulunmamaktadır.';
+                $notice_type = 'error';
+            }
+        } else {
+            $notice_message = 'Not içeriği boş olamaz.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Handle delete task note
+    if ($_POST['action'] == 'delete_task_note' && isset($_POST['note_id'])) {
+        $note_id = intval($_POST['note_id']);
+        $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+        
+        // Check if user can delete this note
+        $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
+        if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
+            $result = $wpdb->delete(
+                $notes_table,
+                array('id' => $note_id),
+                array('%d')
+            );
+            
+            if ($result === false) {
+                $notice_message = 'Not silinemedi. Hata: ' . $wpdb->last_error;
+                $notice_type = 'error';
+            } else {
+                $notice_message = 'Not başarıyla silindi.';
+                $notice_type = 'success';
+            }
+        } else {
+            $notice_message = 'Bu notu silme yetkiniz bulunmamaktadır.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Redirect to prevent form resubmission
+    if (!empty($notice_message)) {
+        $redirect_url = add_query_arg(array(
+            'notice_message' => urlencode($notice_message),
+            'notice_type' => $notice_type
+        ), $_SERVER['REQUEST_URI']);
+        wp_redirect($redirect_url);
+        exit;
+    }
+}
+
+// Handle notice display from URL parameters
+if (isset($_GET['notice_message'])) {
+    $notice_message = urldecode($_GET['notice_message']);
+    $notice_type = isset($_GET['notice_type']) ? $_GET['notice_type'] : 'info';
+}
+
+// Function to get task notes
+function get_task_notes($task_id) {
+    global $wpdb;
+    $current_user_id = get_current_user_id();
+    $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
+    $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+    
+    // Check if table exists
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+    if ($table_exists != $notes_table) {
+        return array(); // Return empty array if table doesn't exist
+    }
+    
+    $notes = $wpdb->get_results($wpdb->prepare("
+        SELECT n.*, u.display_name as created_by_name
+        FROM $notes_table n
+        LEFT JOIN {$wpdb->users} u ON n.created_by = u.ID
+        WHERE n.task_id = %d
+        ORDER BY n.created_at DESC
+    ", $task_id));
+    
+    // Add permission flags
+    foreach ($notes as $note) {
+        $note->can_edit = ($note->created_by == $current_user_id || $is_wp_admin_or_manager);
+        
+        // Format dates
+        $note->created_at_formatted = date('d.m.Y H:i', strtotime($note->created_at));
+        if ($note->updated_at) {
+            $note->updated_at_formatted = date('d.m.Y H:i', strtotime($note->updated_at));
+        }
+    }
+    
+    return $notes;
+}
+
 // Görev son tarih kontrolü
 $current_date = date('Y-m-d H:i:s');
 $is_overdue = strtotime($task->due_date) < strtotime($current_date) && $task->status !== 'completed' && $task->status !== 'cancelled';
@@ -128,6 +289,22 @@ if ($is_overdue) {
 }
 
 ?>
+
+<?php if (isset($notice_message)): ?>
+    <div id="taskNoteNotice" class="task-note-notice-box task-note-notice-<?php echo esc_attr($notice_type); ?>">
+        <div class="task-note-notice-content">
+            <div class="task-note-notice-icon">
+                <i class="fas <?php echo $notice_type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'; ?>"></i>
+            </div>
+            <div class="task-note-notice-message">
+                <?php echo esc_html($notice_message); ?>
+            </div>
+            <button type="button" class="task-note-notice-dismiss" onclick="dismissTaskNoteNotice()">
+                Tamam
+            </button>
+        </div>
+    </div>
+<?php endif; ?>
 
 <div class="task-detail-container">
     <div class="task-header">
@@ -1561,6 +1738,86 @@ if ($is_overdue) {
         transform: scale(1.02);
     }
 }
+
+/* Task Note Notice Box Styles */
+.task-note-notice-box {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    max-width: 500px;
+    width: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideInDown 0.3s ease-out;
+}
+
+.task-note-notice-success {
+    background: linear-gradient(135deg, #4caf50, #45a049);
+    color: white;
+}
+
+.task-note-notice-error {
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+    color: white;
+}
+
+.task-note-notice-content {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    gap: 12px;
+}
+
+.task-note-notice-icon {
+    font-size: 24px;
+    min-width: 24px;
+}
+
+.task-note-notice-message {
+    flex: 1;
+    font-weight: 500;
+    font-size: 15px;
+}
+
+.task-note-notice-dismiss {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.task-note-notice-dismiss:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+@keyframes slideInDown {
+    from {
+        transform: translateX(-50%) translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutUp {
+    from {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(-50%) translateY(-100%);
+        opacity: 0;
+    }
+}
 </style>
 
 <script>
@@ -1652,5 +1909,15 @@ function showEditNoteModal(noteId, noteContent) {
 
 function closeModal(modalId) {
     document.getElementById(modalId).style.display = 'none';
+}
+
+function dismissTaskNoteNotice() {
+    var noticeBox = document.getElementById('taskNoteNotice');
+    if (noticeBox) {
+        noticeBox.style.animation = 'slideOutUp 0.3s ease-in forwards';
+        setTimeout(function() {
+            noticeBox.remove();
+        }, 300);
+    }
 }
 </script>

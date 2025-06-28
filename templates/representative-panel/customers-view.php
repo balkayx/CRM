@@ -1360,7 +1360,19 @@ function format_file_size($size) {
     <?php endif; ?>
 
     <?php if (isset($notice_message)): ?>
-        <div class="ab-notice ab-<?php echo esc_attr($notice_type); ?>"><?php echo esc_html($notice_message); ?></div>
+        <div id="taskNoteNotice" class="task-note-notice-box task-note-notice-<?php echo esc_attr($notice_type); ?>">
+            <div class="task-note-notice-content">
+                <div class="task-note-notice-icon">
+                    <i class="fas <?php echo $notice_type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'; ?>"></i>
+                </div>
+                <div class="task-note-notice-message">
+                    <?php echo esc_html($notice_message); ?>
+                </div>
+                <button type="button" class="task-note-notice-dismiss" onclick="dismissTaskNoteNotice()">
+                    Tamam
+                </button>
+            </div>
+        </div>
     <?php endif; ?>
 
     <div id="ajax-response-container"></div>
@@ -4812,6 +4824,86 @@ tr.overdue td {
         gap: 4px;
     }
 }
+
+/* Task Note Notice Box Styles */
+.task-note-notice-box {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    max-width: 500px;
+    width: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideInDown 0.3s ease-out;
+}
+
+.task-note-notice-success {
+    background: linear-gradient(135deg, #4caf50, #45a049);
+    color: white;
+}
+
+.task-note-notice-error {
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+    color: white;
+}
+
+.task-note-notice-content {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    gap: 12px;
+}
+
+.task-note-notice-icon {
+    font-size: 24px;
+    min-width: 24px;
+}
+
+.task-note-notice-message {
+    flex: 1;
+    font-weight: 500;
+    font-size: 15px;
+}
+
+.task-note-notice-dismiss {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.task-note-notice-dismiss:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+@keyframes slideInDown {
+    from {
+        transform: translateX(-50%) translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutUp {
+    from {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(-50%) translateY(-100%);
+        opacity: 0;
+    }
+}
 </style>
 
 <script>
@@ -5591,11 +5683,76 @@ function toggleTaskNotes(taskId) {
 }
 
 function editTaskNote(noteId, noteContent) {
-    // Simple inline editing - replace note content with textarea
-    if (confirm('Not düzenleme özelliği yakında eklenecek. Şimdilik yeni not ekleyebilirsiniz.')) {
-        // For now, just show the add note form
-        // In future versions, we can implement inline editing
-    }
+    // Create edit form dynamically
+    var noteDiv = document.querySelector('.task-note[data-note-id="' + noteId + '"]');
+    if (!noteDiv) return;
+    
+    var contentDiv = noteDiv.querySelector('.task-note-content');
+    if (!contentDiv) return;
+    
+    // Store original content
+    var originalContent = contentDiv.innerHTML;
+    
+    // Create edit form
+    var editForm = document.createElement('form');
+    editForm.method = 'post';
+    editForm.style.margin = '0';
+    
+    var editTextarea = document.createElement('textarea');
+    editTextarea.name = 'note_content';
+    editTextarea.value = noteContent;
+    editTextarea.rows = '3';
+    editTextarea.style.width = '100%';
+    editTextarea.style.marginBottom = '10px';
+    editTextarea.required = true;
+    
+    var actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = 'action';
+    actionInput.value = 'edit_task_note';
+    
+    var noteIdInput = document.createElement('input');
+    noteIdInput.type = 'hidden';
+    noteIdInput.name = 'note_id';
+    noteIdInput.value = noteId;
+    
+    var nonceInput = document.createElement('input');
+    nonceInput.type = 'hidden';
+    nonceInput.name = 'nonce';
+    nonceInput.value = '<?php echo wp_create_nonce("task_note_nonce"); ?>';
+    
+    var buttonGroup = document.createElement('div');
+    buttonGroup.style.display = 'flex';
+    buttonGroup.style.gap = '8px';
+    
+    var saveButton = document.createElement('button');
+    saveButton.type = 'submit';
+    saveButton.className = 'ab-btn ab-btn-primary ab-btn-xs';
+    saveButton.innerHTML = '<i class="fas fa-save"></i> Kaydet';
+    
+    var cancelButton = document.createElement('button');
+    cancelButton.type = 'button';
+    cancelButton.className = 'ab-btn ab-btn-secondary ab-btn-xs';
+    cancelButton.innerHTML = '<i class="fas fa-times"></i> İptal';
+    cancelButton.onclick = function() {
+        contentDiv.innerHTML = originalContent;
+    };
+    
+    buttonGroup.appendChild(saveButton);
+    buttonGroup.appendChild(cancelButton);
+    
+    editForm.appendChild(editTextarea);
+    editForm.appendChild(actionInput);
+    editForm.appendChild(noteIdInput);
+    editForm.appendChild(nonceInput);
+    editForm.appendChild(buttonGroup);
+    
+    // Replace content with edit form
+    contentDiv.innerHTML = '';
+    contentDiv.appendChild(editForm);
+    
+    // Focus on textarea
+    editTextarea.focus();
 }
 
 function deleteTaskNote(noteId) {
@@ -5640,5 +5797,15 @@ function escapeHtml(text) {
 
 function escapeJs(text) {
     return text.replace(/'/g, "\\'").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+}
+
+function dismissTaskNoteNotice() {
+    var noticeBox = document.getElementById('taskNoteNotice');
+    if (noticeBox) {
+        noticeBox.style.animation = 'slideOutUp 0.3s ease-in forwards';
+        setTimeout(function() {
+            noticeBox.remove();
+        }, 300);
+    }
 }
 </script>
