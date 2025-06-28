@@ -148,6 +148,35 @@ if (!function_exists('can_delete_policy')) {
     }
 }
 
+if (!function_exists('can_export_data')) {
+    function can_export_data($user_id = null) {
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        // Get user's role and export permission
+        $rep = $wpdb->get_row($wpdb->prepare(
+            "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            $user_id
+        ));
+        
+        if (!$rep) {
+            return false;
+        }
+        
+        $role_id = intval($rep->role);
+        
+        // Patron (role 1) and Müdür (role 2) have all permissions including export
+        if ($role_id === 1 || $role_id === 2) {
+            return true;
+        }
+        
+        // For other roles, check individual export_data permission
+        $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+        
+        return $export_permission === 1;
+    }
+}
+
 /**
  * CLASS EXISTENCE CHECK - Duplicate class hatası önlenir
  */
@@ -1326,6 +1355,130 @@ foreach ($filters as $key => $value) {
 // This ensures all active policies are visible regardless of their start date
 // The current year filter is now only applied in statistics methods when needed
 
+// Handle export requests
+if (isset($_POST['export']) && isset($_POST['export_nonce']) && wp_verify_nonce($_POST['export_nonce'], 'export_policies_data')) {
+    if (!can_export_data()) {
+        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
+    }
+    
+    $export_format = sanitize_text_field($_POST['export']);
+    $export_type = sanitize_text_field($_POST['export_type']);
+    
+    if ($export_type === 'policies' && in_array($export_format, ['csv', 'pdf'])) {
+        // Get all policies with current filters for export
+        $export_filters = $filters; // Use same filters as current view
+        
+        try {
+            // Get all records for export (no pagination)
+            $export_data = $policy_manager->getPolicies($export_filters, 1, 999999);
+            $export_policies = $export_data['policies'];
+            
+            if ($export_format === 'csv') {
+                // Export to CSV
+                header('Content-Type: text/csv; charset=utf-8');
+                header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.csv"');
+                
+                $output = fopen('php://output', 'w');
+                
+                // Add BOM for UTF-8
+                fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+                
+                // CSV Headers
+                $headers = [
+                    'ID', 'Müşteri Adı', 'TC/VKN', 'Poliçe No', 'Poliçe Türü', 'Sigorta Şirketi',
+                    'Başlangıç Tarihi', 'Bitiş Tarihi', 'Prim Tutarı', 'Durum', 'Kategori',
+                    'Temsilci', 'Oluşturulma Tarihi'
+                ];
+                fputcsv($output, $headers);
+                
+                // CSV Data
+                foreach ($export_policies as $policy) {
+                    $row = [
+                        $policy->id,
+                        $policy->first_name . ' ' . $policy->last_name,
+                        $policy->tc_identity ?: $policy->tax_number ?: '',
+                        $policy->policy_number,
+                        $policy->policy_type,
+                        $policy->insurance_company,
+                        date('d.m.Y', strtotime($policy->start_date)),
+                        date('d.m.Y', strtotime($policy->end_date)),
+                        number_format($policy->premium_amount, 2),
+                        $policy->status,
+                        $policy->policy_category ?: '',
+                        $policy->representative_name ?: '',
+                        date('d.m.Y H:i', strtotime($policy->created_at))
+                    ];
+                    fputcsv($output, $row);
+                }
+                
+                fclose($output);
+                exit;
+                
+            } elseif ($export_format === 'pdf') {
+                // Simple PDF export (HTML to PDF conversion)
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.pdf"');
+                
+                // Create a simple HTML for PDF conversion
+                $html = '<!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Poliçe Listesi - ' . date('d.m.Y') . '</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; font-size: 12px; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f2f2f2; font-weight: bold; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Poliçe Listesi</h2>
+                        <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
+                        <p>Toplam Kayıt: ' . count($export_policies) . '</p>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Müşteri</th>
+                                <th>Poliçe No</th>
+                                <th>Tür</th>
+                                <th>Şirket</th>
+                                <th>Başlangıç</th>
+                                <th>Bitiş</th>
+                                <th>Prim</th>
+                                <th>Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody>';
+                
+                foreach ($export_policies as $policy) {
+                    $html .= '<tr>
+                        <td>' . esc_html($policy->first_name . ' ' . $policy->last_name) . '</td>
+                        <td>' . esc_html($policy->policy_number) . '</td>
+                        <td>' . esc_html($policy->policy_type) . '</td>
+                        <td>' . esc_html($policy->insurance_company) . '</td>
+                        <td>' . date('d.m.Y', strtotime($policy->start_date)) . '</td>
+                        <td>' . date('d.m.Y', strtotime($policy->end_date)) . '</td>
+                        <td>' . number_format($policy->premium_amount, 2) . ' ₺</td>
+                        <td>' . esc_html($policy->status) . '</td>
+                    </tr>';
+                }
+                
+                $html .= '</tbody></table></body></html>';
+                
+                // Use browser's print to PDF functionality
+                echo $html;
+                exit;
+            }
+        } catch (Exception $e) {
+            wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+        }
+    }
+}
+
 $current_page = max(1, (int) ($_GET['paged'] ?? 1));
 
 // PER PAGE SELECTION
@@ -1488,6 +1641,20 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
                     <i class="fas fa-check-circle"></i>
                     <span>Aktif Poliçeler</span>
                 </a>
+                <?php endif; ?>
+
+                <?php if (can_export_data()): ?>
+                <!-- Export Buttons -->
+                <div class="export-buttons-group">
+                    <button type="button" class="btn btn-outline export-csv-btn" onclick="exportPoliciesData('csv')">
+                        <i class="fas fa-file-csv"></i>
+                        <span>CSV Dışa Aktar</span>
+                    </button>
+                    <button type="button" class="btn btn-outline export-pdf-btn" onclick="exportPoliciesData('pdf')">
+                        <i class="fas fa-file-pdf"></i>
+                        <span>PDF Dışa Aktar</span>
+                    </button>
+                </div>
                 <?php endif; ?>
 
                 <a href="<?php echo esc_url($policy_manager->getNewPolicyUrl()); ?>" class="btn btn-primary">
@@ -2348,6 +2515,54 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
 @media (max-width: 768px) {
     .all-actions {
         flex-wrap: wrap;
+    }
+}
+
+/* Export Buttons Styling */
+.export-buttons-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.export-csv-btn {
+    color: #2e7d32;
+    border-color: #2e7d32;
+}
+
+.export-csv-btn:hover {
+    background-color: #2e7d32;
+    color: white;
+}
+
+.export-pdf-btn {
+    color: #d32f2f;
+    border-color: #d32f2f;
+}
+
+.export-pdf-btn:hover {
+    background-color: #d32f2f;
+    color: white;
+}
+
+.export-buttons-group .btn {
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    min-width: auto;
+}
+
+@media (max-width: 768px) {
+    .export-buttons-group {
+        gap: 4px;
+    }
+    
+    .export-buttons-group .btn span {
+        display: none;
+    }
+    
+    .export-buttons-group .btn {
+        padding: 8px;
+        min-width: 40px;
     }
 }
 
@@ -5698,8 +5913,83 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('  3. ✅ UI harmonization across modules');
     console.log('  4. ✅ Deleted policies management');
     console.log('  5. ✅ Policy restoration functionality');
+    console.log('  6. ✅ Export functionality with permissions');
     console.log('💡 Press F1 for keyboard shortcuts help');
 });
+
+// Export functionality for policies
+function exportPoliciesData(format) {
+    // Show loading indicator
+    const loadingHtml = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 20px; height: 20px; border: 2px solid #f3f3f3; border-top: 2px solid #1976d2; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <span>Veriler hazırlanıyor...</span>
+        </div>
+        <style>
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    `;
+    
+    Swal.fire({
+        title: format.toUpperCase() + ' Dışa Aktarılıyor',
+        html: loadingHtml,
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    // Get current page URL parameters to maintain filters
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('export', format);
+    urlParams.set('export_type', 'policies');
+    
+    // Create form to submit with current filters
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = window.location.pathname;
+    form.style.display = 'none';
+    
+    // Add all current URL parameters as hidden inputs
+    for (const [key, value] of urlParams.entries()) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+    }
+    
+    // Add nonce for security
+    const nonceInput = document.createElement('input');
+    nonceInput.type = 'hidden';
+    nonceInput.name = 'export_nonce';
+    nonceInput.value = '<?php echo wp_create_nonce("export_policies_data"); ?>';
+    form.appendChild(nonceInput);
+    
+    document.body.appendChild(form);
+    
+    // Submit form and handle response
+    form.submit();
+    
+    // Close loading after a delay (form submission will handle the download)
+    setTimeout(() => {
+        Swal.close();
+        
+        Swal.fire({
+            icon: 'success',
+            title: 'Başarılı!',
+            text: format.toUpperCase() + ' dosyası indirilmeye başladı.',
+            timer: 2000,
+            showConfirmButton: false
+        });
+        
+        document.body.removeChild(form);
+    }, 1000);
+}
 </script>
 
 <?php

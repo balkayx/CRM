@@ -183,6 +183,35 @@ function get_team_for_leader($leader_rep_id) {
     return array('team_id' => null, 'members' => array($leader_rep_id)); // Sadece lider
 }
 
+if (!function_exists('can_export_data')) {
+    function can_export_data($user_id = null) {
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        // Get user's role and export permission
+        $rep = $wpdb->get_row($wpdb->prepare(
+            "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            $user_id
+        ));
+        
+        if (!$rep) {
+            return false;
+        }
+        
+        $role_id = intval($rep->role);
+        
+        // Patron (role 1) and Müdür (role 2) have all permissions including export
+        if ($role_id === 1 || $role_id === 2) {
+            return true;
+        }
+        
+        // For other roles, check individual export_data permission
+        $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+        
+        return $export_permission === 1;
+    }
+}
+
 $current_rep = get_current_user_rep_data();
 $current_user_rep_id = $current_rep ? $current_rep->id : 0;
 $current_user_id = get_current_user_id();
@@ -610,6 +639,133 @@ for ($i = 5; $i >= 0; $i--) {
 // Toplam müşteri sayısını al (filtreli sayfa için)
 $total_items = $wpdb->get_var("SELECT COUNT(DISTINCT c.id) " . $base_query);
 
+// Handle export requests
+if (isset($_POST['export']) && isset($_POST['export_nonce']) && wp_verify_nonce($_POST['export_nonce'], 'export_customers_data')) {
+    if (!can_export_data()) {
+        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
+    }
+    
+    $export_format = sanitize_text_field($_POST['export']);
+    $export_type = sanitize_text_field($_POST['export_type']);
+    
+    if ($export_type === 'customers' && in_array($export_format, ['csv', 'pdf'])) {
+        try {
+            // Get all customers with current filters for export (no pagination)
+            $export_customers = $wpdb->get_results("
+                SELECT c.*, CONCAT(c.first_name, ' ', c.last_name) AS customer_name, 
+                       u.display_name as representative_name, 
+                       fu.display_name as first_registrar_name
+                " . $base_query . " 
+                ORDER BY $orderby $order
+            ");
+            
+            if ($export_format === 'csv') {
+                // Export to CSV
+                header('Content-Type: text/csv; charset=utf-8');
+                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.csv"');
+                
+                $output = fopen('php://output', 'w');
+                
+                // Add BOM for UTF-8
+                fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+                
+                // CSV Headers
+                $headers = [
+                    'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Telefon', 'E-posta', 
+                    'Adres', 'Şirket', 'Cinsiyet', 'Doğum Tarihi', 'Kategori', 'Durum',
+                    'Temsilci', 'İlk Kayıt Eden', 'Oluşturulma Tarihi'
+                ];
+                fputcsv($output, $headers);
+                
+                // CSV Data
+                foreach ($export_customers as $customer) {
+                    $row = [
+                        $customer->id,
+                        $customer->first_name,
+                        $customer->last_name,
+                        $customer->tc_identity ?: '',
+                        $customer->tax_number ?: '',
+                        $customer->phone ?: '',
+                        $customer->email ?: '',
+                        $customer->address ?: '',
+                        $customer->company_name ?: '',
+                        $customer->gender ?: '',
+                        $customer->birth_date ? date('d.m.Y', strtotime($customer->birth_date)) : '',
+                        $customer->category ?: '',
+                        $customer->status ?: '',
+                        $customer->representative_name ?: '',
+                        $customer->first_registrar_name ?: '',
+                        date('d.m.Y H:i', strtotime($customer->created_at))
+                    ];
+                    fputcsv($output, $row);
+                }
+                
+                fclose($output);
+                exit;
+                
+            } elseif ($export_format === 'pdf') {
+                // Simple PDF export (HTML to PDF conversion)
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.pdf"');
+                
+                // Create a simple HTML for PDF conversion
+                $html = '<!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Müşteri Listesi - ' . date('d.m.Y') . '</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; font-size: 12px; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f2f2f2; font-weight: bold; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Müşteri Listesi</h2>
+                        <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
+                        <p>Toplam Kayıt: ' . count($export_customers) . '</p>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ad Soyad</th>
+                                <th>TC/VKN</th>
+                                <th>Telefon</th>
+                                <th>E-posta</th>
+                                <th>Kategori</th>
+                                <th>Durum</th>
+                                <th>Temsilci</th>
+                            </tr>
+                        </thead>
+                        <tbody>';
+                
+                foreach ($export_customers as $customer) {
+                    $html .= '<tr>
+                        <td>' . esc_html($customer->first_name . ' ' . $customer->last_name) . '</td>
+                        <td>' . esc_html($customer->tc_identity ?: $customer->tax_number ?: '') . '</td>
+                        <td>' . esc_html($customer->phone ?: '') . '</td>
+                        <td>' . esc_html($customer->email ?: '') . '</td>
+                        <td>' . esc_html($customer->category ?: '') . '</td>
+                        <td>' . esc_html($customer->status ?: '') . '</td>
+                        <td>' . esc_html($customer->representative_name ?: '') . '</td>
+                    </tr>';
+                }
+                
+                $html .= '</tbody></table></body></html>';
+                
+                // Use browser's print to PDF functionality
+                echo $html;
+                exit;
+            }
+        } catch (Exception $e) {
+            wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+        }
+    }
+}
+
 // Sıralama
 $orderby = isset($_GET['orderby']) ? sanitize_text_field($_GET['orderby']) : 'c.created_at';
 $order = isset($_GET['order']) && in_array(strtoupper($_GET['order']), array('ASC', 'DESC')) ? strtoupper($_GET['order']) : 'DESC';
@@ -849,6 +1005,20 @@ $debug_mode = false; // Geliştirici modu - aktifleştirirseniz SQL sorguların�
                     </a>
                     <?php endif; ?>
                 </div>
+
+                <?php if (can_export_data()): ?>
+                <!-- Export Buttons -->
+                <div class="export-buttons-group">
+                    <button type="button" class="btn btn-outline export-csv-btn" onclick="exportCustomersData('csv')">
+                        <i class="fas fa-file-csv"></i>
+                        <span>CSV Dışa Aktar</span>
+                    </button>
+                    <button type="button" class="btn btn-outline export-pdf-btn" onclick="exportCustomersData('pdf')">
+                        <i class="fas fa-file-pdf"></i>
+                        <span>PDF Dışa Aktar</span>
+                    </button>
+                </div>
+                <?php endif; ?>
 
                 <?php if ($current_rep && ($current_rep->role == 1 || $current_rep->role == 2 || $current_rep->role == 3 || $current_rep->role == 4 || $current_rep->role == 5)): ?>
                 <a href="?view=<?php echo esc_attr($view_type); ?>&action=new" class="btn btn-primary">
@@ -1905,6 +2075,54 @@ $debug_mode = false; // Geliştirici modu - aktifleştirirseniz SQL sorguların�
     min-height: 100vh;
     padding: var(--spacing-lg);
     margin: 0;
+}
+
+/* Export Buttons Styling */
+.export-buttons-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.export-csv-btn {
+    color: #2e7d32;
+    border-color: #2e7d32;
+}
+
+.export-csv-btn:hover {
+    background-color: #2e7d32;
+    color: white;
+}
+
+.export-pdf-btn {
+    color: #d32f2f;
+    border-color: #d32f2f;
+}
+
+.export-pdf-btn:hover {
+    background-color: #d32f2f;
+    color: white;
+}
+
+.export-buttons-group .btn {
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    min-width: auto;
+}
+
+@media (max-width: 768px) {
+    .export-buttons-group {
+        gap: 4px;
+    }
+    
+    .export-buttons-group .btn span {
+        display: none;
+    }
+    
+    .export-buttons-group .btn {
+        padding: 8px;
+        min-width: 40px;
+    }
 }
 
 .debug-info {
@@ -4346,8 +4564,83 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('  3. ✅ Improved table design and responsiveness');
     console.log('  4. ✅ All original filter functionality preserved');
     console.log('  5. ✅ New generation design tools implemented');
+    console.log('  6. ✅ Export functionality with permissions');
     console.log('💡 Press F1 for keyboard shortcuts help');
 });
+
+// Export functionality for customers
+function exportCustomersData(format) {
+    // Show loading indicator
+    const loadingHtml = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 20px; height: 20px; border: 2px solid #f3f3f3; border-top: 2px solid #1976d2; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <span>Veriler hazırlanıyor...</span>
+        </div>
+        <style>
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    `;
+    
+    Swal.fire({
+        title: format.toUpperCase() + ' Dışa Aktarılıyor',
+        html: loadingHtml,
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    // Get current page URL parameters to maintain filters
+    const urlParams = new URLSearchParams(window.location.search);
+    urlParams.set('export', format);
+    urlParams.set('export_type', 'customers');
+    
+    // Create form to submit with current filters
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = window.location.pathname;
+    form.style.display = 'none';
+    
+    // Add all current URL parameters as hidden inputs
+    for (const [key, value] of urlParams.entries()) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+    }
+    
+    // Add nonce for security
+    const nonceInput = document.createElement('input');
+    nonceInput.type = 'hidden';
+    nonceInput.name = 'export_nonce';
+    nonceInput.value = '<?php echo wp_create_nonce("export_customers_data"); ?>';
+    form.appendChild(nonceInput);
+    
+    document.body.appendChild(form);
+    
+    // Submit form and handle response
+    form.submit();
+    
+    // Close loading after a delay (form submission will handle the download)
+    setTimeout(() => {
+        Swal.close();
+        
+        Swal.fire({
+            icon: 'success',
+            title: 'Başarılı!',
+            text: format.toUpperCase() + ' dosyası indirilmeye başladı.',
+            timer: 2000,
+            showConfirmButton: false
+        });
+        
+        document.body.removeChild(form);
+    }, 1000);
+}
 </script>
 
 <?php
