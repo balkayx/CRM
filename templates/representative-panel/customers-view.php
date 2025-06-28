@@ -223,6 +223,164 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_quote_status' && iss
     exit;
 }
 
+// Task Notes functionality - adapted from tasks.php
+// Handle task note actions
+if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'edit_task_note', 'delete_task_note']) && isset($_POST['nonce']) && wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+    $current_user_id = get_current_user_id();
+    $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
+    
+    if ($_POST['action'] == 'save_task_note' && isset($_POST['task_id']) && isset($_POST['note_content'])) {
+        $task_id = intval($_POST['task_id']);
+        $note_content = sanitize_textarea_field($_POST['note_content']);
+        
+        if (!empty($note_content)) {
+            $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+            
+            // Check if table exists before attempting insert
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+            if ($table_exists != $notes_table) {
+                $notice_message = 'Notlar tablosu bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.';
+                $notice_type = 'error';
+            } else {
+                $result = $wpdb->insert(
+                    $notes_table,
+                    array(
+                        'task_id' => $task_id,
+                        'note_content' => $note_content,
+                        'created_by' => $current_user_id,
+                        'created_at' => current_time('mysql')
+                    ),
+                    array('%d', '%s', '%d', '%s')
+                );
+                
+                if ($result === false) {
+                    $notice_message = 'Not kaydedilemedi. Hata: ' . $wpdb->last_error;
+                    $notice_type = 'error';
+                } else {
+                    $notice_message = 'Not başarıyla kaydedildi.';
+                    $notice_type = 'success';
+                }
+            }
+        } else {
+            $notice_message = 'Not içeriği boş olamaz.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Handle edit task note
+    if ($_POST['action'] == 'edit_task_note' && isset($_POST['note_id']) && isset($_POST['note_content'])) {
+        $note_id = intval($_POST['note_id']);
+        $note_content = sanitize_textarea_field($_POST['note_content']);
+        
+        if (!empty($note_content)) {
+            $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+            
+            // Check if user can edit this note
+            $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
+            if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
+                $result = $wpdb->update(
+                    $notes_table,
+                    array(
+                        'note_content' => $note_content,
+                        'updated_at' => current_time('mysql')
+                    ),
+                    array('id' => $note_id),
+                    array('%s', '%s'),
+                    array('%d')
+                );
+                
+                if ($result === false) {
+                    $notice_message = 'Not güncellenemedi. Hata: ' . $wpdb->last_error;
+                    $notice_type = 'error';
+                } else {
+                    $notice_message = 'Not başarıyla güncellendi.';
+                    $notice_type = 'success';
+                }
+            } else {
+                $notice_message = 'Bu notu düzenleme yetkiniz bulunmamaktadır.';
+                $notice_type = 'error';
+            }
+        } else {
+            $notice_message = 'Not içeriği boş olamaz.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Handle delete task note
+    if ($_POST['action'] == 'delete_task_note' && isset($_POST['note_id'])) {
+        $note_id = intval($_POST['note_id']);
+        $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+        
+        // Check if user can delete this note
+        $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
+        if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
+            $result = $wpdb->delete(
+                $notes_table,
+                array('id' => $note_id),
+                array('%d')
+            );
+            
+            if ($result === false) {
+                $notice_message = 'Not silinemedi. Hata: ' . $wpdb->last_error;
+                $notice_type = 'error';
+            } else {
+                $notice_message = 'Not başarıyla silindi.';
+                $notice_type = 'success';
+            }
+        } else {
+            $notice_message = 'Bu notu silme yetkiniz bulunmamaktadır.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Redirect to prevent form resubmission
+    if (!empty($notice_message)) {
+        $redirect_url = add_query_arg(array(
+            'notice_message' => urlencode($notice_message),
+            'notice_type' => $notice_type
+        ), $_SERVER['REQUEST_URI']);
+        wp_redirect($redirect_url);
+        exit;
+    }
+}
+
+// Handle notice display from URL parameters
+if (isset($_GET['notice_message'])) {
+    $notice_message = urldecode($_GET['notice_message']);
+    $notice_type = isset($_GET['notice_type']) ? $_GET['notice_type'] : 'info';
+}
+
+// Function to get task notes
+function get_task_notes($task_id) {
+    global $wpdb;
+    $current_user_id = get_current_user_id();
+    $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
+    $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+    
+    // Check if table exists
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+    if ($table_exists != $notes_table) {
+        return array();
+    }
+    
+    $notes = $wpdb->get_results($wpdb->prepare("
+        SELECT tn.*, u.display_name as created_by_name 
+        FROM $notes_table tn 
+        LEFT JOIN {$wpdb->users} u ON tn.created_by = u.ID 
+        WHERE tn.task_id = %d 
+        ORDER BY tn.created_at DESC
+    ", $task_id));
+    
+    if ($notes) {
+        foreach ($notes as $note) {
+            $note->can_edit = ($note->created_by == $current_user_id || $is_wp_admin_or_manager);
+            $note->created_at_formatted = date('d.m.Y H:i', strtotime($note->created_at));
+        }
+    }
+    
+    return $notes ? $notes : array();
+}
+
 $customer_id = intval($_GET['id']);
 global $wpdb;
 $customers_table = $wpdb->prefix . 'insurance_crm_customers';
@@ -1201,6 +1359,10 @@ function format_file_size($size) {
         <?php unset($_SESSION['crm_notice']); ?>
     <?php endif; ?>
 
+    <?php if (isset($notice_message)): ?>
+        <div class="ab-notice ab-<?php echo esc_attr($notice_type); ?>"><?php echo esc_html($notice_message); ?></div>
+    <?php endif; ?>
+
     <div id="ajax-response-container"></div>
     
     <!-- Müşteri Bilgileri -->
@@ -2010,6 +2172,17 @@ function format_file_size($size) {
                                         </span>
                                     </td>
                                     <td>
+                                        <?php if ($note_count > 0): ?>
+                                            <button type="button" class="ab-btn ab-btn-sm" onclick="showTaskNotes(<?php echo $task->id; ?>)" title="<?php echo $note_count; ?> not bulunuyor">
+                                                <i class="fas fa-comment-dots"></i> <?php echo $note_count; ?>
+                                            </button>
+                                        <?php else: ?>
+                                            <button type="button" class="ab-btn ab-btn-sm ab-btn-outline" onclick="showAddTaskNoteModal(<?php echo $task->id; ?>)" title="Not ekle">
+                                                <i class="fas fa-plus"></i> Not Ekle
+                                            </button>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td>
                                         <?php echo !empty($policy->representative_name) ? esc_html($policy->representative_name) : '—'; ?>
                                     </td>
                                     <td>
@@ -2125,6 +2298,7 @@ function format_file_size($size) {
                                 <th>Son Tarih</th>
                                 <th>Öncelik</th>
                                 <th>Durum</th>
+                                <th>Notlar</th>
                                 <th>İşlemler</th>
                             </tr>
                         </thead>
@@ -2132,6 +2306,18 @@ function format_file_size($size) {
                             <?php foreach ($tasks as $task):
                                 $is_overdue = strtotime($task->due_date) < time() && $task->status != 'completed';
                                 $row_class = $is_overdue ? 'overdue' : '';
+                                
+                                // Check if task has notes
+                                $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                                $note_count = 0;
+                                
+                                if ($table_exists == $notes_table) {
+                                    $note_count = $wpdb->get_var($wpdb->prepare(
+                                        "SELECT COUNT(*) FROM {$notes_table} WHERE task_id = %d",
+                                        $task->id
+                                    ));
+                                }
                             ?>
                                 <tr class="<?php echo $row_class; ?>">
                                     <td>
@@ -2302,6 +2488,85 @@ function format_file_size($size) {
                 </div>
             </div>
         </div>
+
+<!-- Task Notes Modals -->
+<!-- Task Notes View Modal -->
+<div id="taskNotesModal" class="ab-modal" style="display: none;">
+    <div class="ab-modal-content">
+        <div class="ab-modal-header">
+            <h3><i class="fas fa-comment-dots"></i> Görev Notları</h3>
+            <button type="button" class="ab-modal-close" onclick="closeTaskNotesModal()">&times;</button>
+        </div>
+        <div class="ab-modal-body">
+            <div id="taskNotesList" class="task-notes-list">
+                <!-- Notes will be loaded here via JavaScript -->
+            </div>
+            <div class="task-notes-actions">
+                <button type="button" class="ab-btn ab-btn-primary" onclick="showAddTaskNoteModalFromList()">
+                    <i class="fas fa-plus"></i> Yeni Not Ekle
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Task Note Modal -->
+<div id="addTaskNoteModal" class="ab-modal" style="display: none;">
+    <div class="ab-modal-content">
+        <div class="ab-modal-header">
+            <h3><i class="fas fa-sticky-note"></i> Yeni Not Ekle</h3>
+            <button type="button" class="ab-modal-close" onclick="closeAddTaskNoteModal()">&times;</button>
+        </div>
+        <form method="post" action="">
+            <div class="ab-modal-body">
+                <div class="ab-form-group">
+                    <label for="newTaskNoteContent">Not İçeriği:</label>
+                    <textarea name="note_content" id="newTaskNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+                </div>
+                <input type="hidden" name="task_id" id="addTaskNoteTaskId" value="">
+                <input type="hidden" name="action" value="save_task_note">
+                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+            </div>
+            <div class="ab-modal-footer">
+                <button type="button" class="ab-btn ab-btn-secondary" onclick="closeAddTaskNoteModal()">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button type="submit" class="ab-btn ab-btn-primary">
+                    <i class="fas fa-save"></i> Kaydet
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Task Note Modal -->
+<div id="editTaskNoteModal" class="ab-modal" style="display: none;">
+    <div class="ab-modal-content">
+        <div class="ab-modal-header">
+            <h3><i class="fas fa-edit"></i> Not Düzenle</h3>
+            <button type="button" class="ab-modal-close" onclick="closeEditTaskNoteModal()">&times;</button>
+        </div>
+        <form method="post" action="">
+            <div class="ab-modal-body">
+                <div class="ab-form-group">
+                    <label for="editTaskNoteContent">Not İçeriği:</label>
+                    <textarea name="note_content" id="editTaskNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
+                </div>
+                <input type="hidden" name="note_id" id="editTaskNoteId" value="">
+                <input type="hidden" name="action" value="edit_task_note">
+                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
+            </div>
+            <div class="ab-modal-footer">
+                <button type="button" class="ab-btn ab-btn-secondary" onclick="closeEditTaskNoteModal()">
+                    <i class="fas fa-times"></i> İptal
+                </button>
+                <button type="submit" class="ab-btn ab-btn-primary">
+                    <i class="fas fa-save"></i> Güncelle
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <style>
 /* Temel Stiller */
@@ -4354,6 +4619,92 @@ tr.overdue td {
         align-items: stretch;
     }
 }
+
+/* Task Notes Styles */
+.task-notes-list {
+    margin-bottom: 20px;
+}
+
+.task-note-item {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.task-note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #666;
+}
+
+.task-note-header strong {
+    color: #333;
+    font-size: 14px;
+}
+
+.task-note-date {
+    color: #888;
+}
+
+.task-note-actions {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.task-note-actions button {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.task-note-actions button:hover {
+    background-color: #e9ecef;
+}
+
+.task-note-actions .btn-edit {
+    color: #007bff;
+}
+
+.task-note-actions .btn-delete {
+    color: #dc3545;
+}
+
+.task-note-content {
+    color: #333;
+    line-height: 1.6;
+    white-space: pre-line;
+    font-size: 14px;
+}
+
+.task-notes-actions {
+    padding-top: 15px;
+    border-top: 1px solid #e9ecef;
+    margin-top: 15px;
+}
+
+.no-task-notes {
+    text-align: center;
+    color: #6c757d;
+    padding: 30px;
+    font-style: italic;
+}
+
+.no-task-notes i {
+    font-size: 48px;
+    color: #dee2e6;
+    margin-bottom: 15px;
+    display: block;
+}
 </style>
 
 <script>
@@ -5111,6 +5462,209 @@ $(document).ready(function() {
                     $('.btn-delete-note[data-note-id="' + noteId + '"]').prop('disabled', false);
                 }
             });
+        }
+    });
+});
+
+// Task Notes JavaScript Functions
+var currentTaskId = null;
+
+function showTaskNotes(taskId) {
+    currentTaskId = taskId;
+    
+    // Load notes for this task
+    loadTaskNotes(taskId);
+    
+    // Show modal
+    document.getElementById('taskNotesModal').style.display = 'flex';
+}
+
+function showAddTaskNoteModal(taskId) {
+    currentTaskId = taskId;
+    document.getElementById('addTaskNoteTaskId').value = taskId;
+    document.getElementById('newTaskNoteContent').value = '';
+    document.getElementById('addTaskNoteModal').style.display = 'flex';
+    document.getElementById('newTaskNoteContent').focus();
+}
+
+function showAddTaskNoteModalFromList() {
+    if (currentTaskId) {
+        closeTaskNotesModal();
+        showAddTaskNoteModal(currentTaskId);
+    }
+}
+
+function showEditTaskNoteModal(noteId, noteContent) {
+    document.getElementById('editTaskNoteId').value = noteId;
+    document.getElementById('editTaskNoteContent').value = noteContent;
+    document.getElementById('editTaskNoteModal').style.display = 'flex';
+    document.getElementById('editTaskNoteContent').focus();
+}
+
+function closeTaskNotesModal() {
+    document.getElementById('taskNotesModal').style.display = 'none';
+    currentTaskId = null;
+}
+
+function closeAddTaskNoteModal() {
+    document.getElementById('addTaskNoteModal').style.display = 'none';
+}
+
+function closeEditTaskNoteModal() {
+    document.getElementById('editTaskNoteModal').style.display = 'none';
+}
+
+function loadTaskNotes(taskId) {
+    // Create a simple AJAX request to get task notes
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', window.location.href, true);
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState === 4 && xhr.status === 200) {
+            try {
+                var response = JSON.parse(xhr.responseText);
+                displayTaskNotes(response.notes);
+            } catch (e) {
+                // If not JSON, try to parse the notes directly from the response
+                displayTaskNotesFromServer(taskId);
+            }
+        }
+    };
+    
+    xhr.send('action=get_task_notes_ajax&task_id=' + taskId + '&nonce=' + '<?php echo wp_create_nonce("task_notes_ajax"); ?>');
+}
+
+function displayTaskNotesFromServer(taskId) {
+    // Fallback: Use PHP to get notes (this will be rendered on page load)
+    var notesList = document.getElementById('taskNotesList');
+    
+    <?php
+    // Generate JavaScript to handle notes display
+    echo "
+    var taskNotes = {};
+    ";
+    
+    // Pre-load notes for all tasks to avoid additional requests
+    if (!empty($tasks)) {
+        foreach ($tasks as $task) {
+            $task_notes = get_task_notes($task->id);
+            echo "taskNotes[{$task->id}] = [";
+            if (!empty($task_notes)) {
+                foreach ($task_notes as $note) {
+                    echo "{
+                        id: {$note->id},
+                        content: " . json_encode($note->note_content) . ",
+                        author: " . json_encode($note->created_by_name) . ",
+                        date: " . json_encode($note->created_at_formatted) . ",
+                        can_edit: " . ($note->can_edit ? 'true' : 'false') . "
+                    },";
+                }
+            }
+            echo "];";
+        }
+    }
+    ?>
+    
+    displayTaskNotes(taskNotes[taskId] || []);
+}
+
+function displayTaskNotes(notes) {
+    var notesList = document.getElementById('taskNotesList');
+    
+    if (!notes || notes.length === 0) {
+        notesList.innerHTML = '<div class="no-task-notes"><i class="fas fa-comment-slash"></i><p>Bu göreve ait not bulunmuyor.</p></div>';
+        return;
+    }
+    
+    var html = '';
+    notes.forEach(function(note) {
+        html += '<div class="task-note-item">';
+        html += '<div class="task-note-header">';
+        html += '<strong>' + escapeHtml(note.author) + '</strong>';
+        html += '<span class="task-note-date">' + escapeHtml(note.date) + '</span>';
+        
+        if (note.can_edit) {
+            html += '<div class="task-note-actions">';
+            html += '<button type="button" class="btn-edit" onclick="showEditTaskNoteModal(' + note.id + ', \'' + escapeJs(note.content) + '\')" title="Düzenle">';
+            html += '<i class="fas fa-edit"></i>';
+            html += '</button>';
+            html += '<button type="button" class="btn-delete" onclick="deleteTaskNote(' + note.id + ')" title="Sil">';
+            html += '<i class="fas fa-trash"></i>';
+            html += '</button>';
+            html += '</div>';
+        }
+        
+        html += '</div>';
+        html += '<div class="task-note-content">' + escapeHtml(note.content).replace(/\n/g, '<br>') + '</div>';
+        html += '</div>';
+    });
+    
+    notesList.innerHTML = html;
+}
+
+function deleteTaskNote(noteId) {
+    if (confirm('Bu notu silmek istediğinizden emin misiniz?')) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.style.display = 'none';
+        
+        var actionInput = document.createElement('input');
+        actionInput.type = 'hidden';
+        actionInput.name = 'action';
+        actionInput.value = 'delete_task_note';
+        
+        var noteIdInput = document.createElement('input');
+        noteIdInput.type = 'hidden';
+        noteIdInput.name = 'note_id';
+        noteIdInput.value = noteId;
+        
+        var nonceInput = document.createElement('input');
+        nonceInput.type = 'hidden';
+        nonceInput.name = 'nonce';
+        nonceInput.value = '<?php echo wp_create_nonce("task_note_nonce"); ?>';
+        
+        form.appendChild(actionInput);
+        form.appendChild(noteIdInput);
+        form.appendChild(nonceInput);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function escapeHtml(text) {
+    var map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
+function escapeJs(text) {
+    return text.replace(/'/g, "\\'").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+}
+
+// Modal close events for task notes
+document.addEventListener('DOMContentLoaded', function() {
+    // Close modal when clicking outside
+    document.getElementById('taskNotesModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeTaskNotesModal();
+        }
+    });
+    
+    document.getElementById('addTaskNoteModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeAddTaskNoteModal();
+        }
+    });
+    
+    document.getElementById('editTaskNoteModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeEditTaskNoteModal();
         }
     });
 });
