@@ -892,21 +892,34 @@ $total_task_types = count($settings['default_task_types']);
                             <div class="form-group">
                                 <label for="announcement_version">Versiyon</label>
                                 <input type="text" name="announcement_version" id="announcement_version" class="form-control" 
-                                       value="<?php echo esc_attr(isset($settings['update_announcements']['version']) ? $settings['update_announcements']['version'] : '1.8.3'); ?>"
+                                       value="<?php echo esc_attr(isset($settings['update_announcements']['version']) ? $settings['update_announcements']['version'] : '1.9.1'); ?>"
                                        placeholder="Örn: 1.8.3">
                                 <div class="form-hint">Bu versiyonu daha önce gören kullanıcılara tekrar gösterilmeyecek</div>
                             </div>
                             
                             <div class="form-group">
                                 <label for="announcement_content">Duyuru İçeriği</label>
-                                <textarea name="announcement_content" id="announcement_content" class="form-control" rows="12" placeholder="Yeni özellikler ve güncellemeler hakkında bilgi verin..."><?php 
+                                <div class="content-editor-toolbar">
+                                    <button type="button" class="format-btn" onclick="insertFormatting('h3', 'Başlık')">
+                                        <i class="fas fa-heading"></i> Başlık
+                                    </button>
+                                    <button type="button" class="format-btn" onclick="insertFormatting('strong', 'Kalın Yazı')">
+                                        <i class="fas fa-bold"></i> Kalın
+                                    </button>
+                                    <button type="button" class="format-btn" onclick="insertFormatting('p', 'Paragraf')">
+                                        <i class="fas fa-paragraph"></i> Paragraf
+                                    </button>
+                                    <button type="button" class="format-btn" onclick="insertList()">
+                                        <i class="fas fa-list"></i> Liste
+                                    </button>
+                                </div>
+                                <textarea name="announcement_content" id="announcement_content" class="form-control content-editor" rows="12" placeholder="Yeni özellikler ve güncellemeler hakkında bilgi verin..."><?php 
                                     echo isset($settings['update_announcements']['content']) ? esc_textarea($settings['update_announcements']['content']) : ''; 
                                 ?></textarea>
                                 <div class="form-hint">
-                                    HTML etiketleri kullanabilirsiniz. Örnek format:
-                                    <br>• <strong>&lt;h3&gt;</strong>Başlık<strong>&lt;/h3&gt;</strong>
-                                    <br>• <strong>&lt;ul&gt;&lt;li&gt;</strong>Liste öğesi<strong>&lt;/li&gt;&lt;/ul&gt;</strong>
-                                    <br>• <strong>&lt;p&gt;</strong>Paragraf<strong>&lt;/p&gt;</strong>
+                                    <strong>💡 İpucu:</strong> Yukarıdaki butonları kullanarak kolayca biçimlendirme ekleyebilirsiniz.
+                                    <br>• Emoji kullanabilirsiniz: 🎉 ✨ 🚀 ⚡ 📊 🔧
+                                    <br>• Basit HTML etiketleri desteklenir
                                 </div>
                             </div>
                             
@@ -943,7 +956,7 @@ $total_task_types = count($settings['default_task_types']);
                                 <i class="fas fa-save"></i> Duyuru Ayarlarını Kaydet
                             </button>
                             <button type="button" class="btn-modern btn-preview" onclick="previewAnnouncement()">
-                                <i class="fas fa-eye"></i> Önizleme
+                                <i class="fas fa-eye"></i> Önizleme <span class="preview-indicator">Canlı</span>
                             </button>
                         </div>
                     </div>
@@ -1635,6 +1648,65 @@ textarea.form-control {
         flex: 0 0 100%;
     }
 }
+
+/* Content Editor Styling */
+.content-editor-toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+}
+
+.format-btn {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 13px;
+    color: #495057;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.format-btn:hover {
+    background: #007bff;
+    color: white;
+    border-color: #007bff;
+}
+
+.format-btn i {
+    font-size: 12px;
+}
+
+.content-editor {
+    min-height: 300px !important;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    line-height: 1.6;
+}
+
+.preview-indicator {
+    display: inline-block;
+    background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+    color: white;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-left: 10px;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
 </style>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -1776,5 +1848,50 @@ function closeAnnouncementPreview() {
     if (modal) {
         modal.remove();
     }
+}
+
+// Content formatting functions
+function insertFormatting(tag, defaultText) {
+    const textarea = document.getElementById('announcement_content');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = textarea.value.substring(start, end);
+    const textToInsert = selectedText || defaultText;
+    
+    let formattedText;
+    if (tag === 'h3') {
+        formattedText = `<h3>${textToInsert}</h3>`;
+    } else if (tag === 'strong') {
+        formattedText = `<strong>${textToInsert}</strong>`;
+    } else if (tag === 'p') {
+        formattedText = `<p>${textToInsert}</p>`;
+    }
+    
+    const newText = textarea.value.substring(0, start) + formattedText + textarea.value.substring(end);
+    textarea.value = newText;
+    
+    // Focus back on textarea
+    textarea.focus();
+    const newPos = start + formattedText.length;
+    textarea.setSelectionRange(newPos, newPos);
+}
+
+function insertList() {
+    const textarea = document.getElementById('announcement_content');
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    
+    const listText = `<ul>
+<li>Yeni özellik 1</li>
+<li>Yeni özellik 2</li>
+<li>Yeni özellik 3</li>
+</ul>`;
+    
+    const newText = textarea.value.substring(0, start) + listText + textarea.value.substring(end);
+    textarea.value = newText;
+    
+    textarea.focus();
+    const newPos = start + listText.length;
+    textarea.setSelectionRange(newPos, newPos);
 }
 </script>

@@ -35,6 +35,20 @@ if (!function_exists('get_current_user_rep_id')) {
         ));
     }
 }
+
+// Mevcut kullanıcının temsilci verilerini al
+if (!function_exists('get_current_user_rep_data')) {
+    function get_current_user_rep_data() {
+        global $wpdb;
+        $current_user_id = get_current_user_id();
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT id, role, customer_edit, customer_delete, policy_edit, policy_delete, task_edit, task_delete 
+             FROM {$wpdb->prefix}insurance_crm_representatives 
+             WHERE user_id = %d AND status = 'active'",
+            $current_user_id
+        ));
+    }
+}
 $current_user_rep_id = get_current_user_rep_id();
 $current_user_id = get_current_user_id();
 

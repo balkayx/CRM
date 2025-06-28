@@ -1595,7 +1595,15 @@ $announcements = isset($announcement_settings['update_announcements']) ? $announ
 $show_announcements = isset($announcements['enabled']) && $announcements['enabled'];
 $announcement_title = isset($announcements['title']) ? $announcements['title'] : 'Sistem Güncellemeleri';
 $announcement_content = isset($announcements['content']) ? $announcements['content'] : '';
-$announcement_version = isset($announcements['version']) ? $announcements['version'] : '1.8.3';
+$announcement_version = isset($announcements['version']) ? $announcements['version'] : '1.9.1';
+
+// Check if user just logged in
+$current_user_id = get_current_user_id();
+$just_logged_in = get_transient('insurance_crm_show_popup_' . $current_user_id);
+if ($just_logged_in) {
+    // Delete the transient so it doesn't show again
+    delete_transient('insurance_crm_show_popup_' . $current_user_id);
+}
 ?>
 
 <?php if ($show_announcements && !empty($announcement_content)): ?>
@@ -1641,6 +1649,8 @@ $announcement_version = isset($announcements['version']) ? $announcements['versi
     height: 100%;
     background-color: rgba(0,0,0,0.5);
     backdrop-filter: blur(5px);
+    opacity: 0;
+    transition: opacity 0.3s ease;
 }
 
 .version-modal-content {
@@ -1739,18 +1749,28 @@ $announcement_version = isset($announcements['version']) ? $announcements['versi
 
 <script>
 function showVersionNotification() {
-    <?php if ($show_announcements && !empty($announcement_content)): ?>
+    <?php if ($show_announcements && !empty($announcement_content) && $just_logged_in): ?>
     const currentVersion = '<?php echo esc_js($announcement_version); ?>';
     const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
     
     // Check if this version notification has been viewed
     <?php if (isset($announcements['show_to_all']) && $announcements['show_to_all']): ?>
-    // Show to all users - don't check localStorage
-    document.getElementById('versionNotificationModal').style.display = 'block';
+    // Show to all users after login - don't check localStorage  
+    const modal = document.getElementById('versionNotificationModal');
+    modal.style.display = 'block';
+    // Add a slight delay for smooth animation
+    setTimeout(() => {
+        modal.style.opacity = '1';
+    }, 50);
     <?php else: ?>
-    // Only show if not viewed before
+    // Only show if not viewed before and user just logged in
     if (!localStorage.getItem(viewedKey)) {
-        document.getElementById('versionNotificationModal').style.display = 'block';
+        const modal = document.getElementById('versionNotificationModal');
+        modal.style.display = 'block';
+        // Add a slight delay for smooth animation
+        setTimeout(() => {
+            modal.style.opacity = '1';
+        }, 50);
     }
     <?php endif; ?>
     <?php endif; ?>
@@ -1764,15 +1784,21 @@ function closeVersionModal() {
     // Mark this version as viewed
     localStorage.setItem(viewedKey, 'true');
     
-    // Hide modal
-    document.getElementById('versionNotificationModal').style.display = 'none';
+    // Smooth hide animation
+    const modal = document.getElementById('versionNotificationModal');
+    modal.style.opacity = '0';
+    setTimeout(() => {
+        modal.style.display = 'none';
+    }, 300);
     <?php endif; ?>
 }
 
-// Show notification when page loads
+// Show notification when page loads (only if user just logged in)
 document.addEventListener('DOMContentLoaded', function() {
-    // Wait a bit for page to load completely
+    <?php if ($just_logged_in): ?>
+    // Wait a bit for page to load completely, then show if user just logged in
     setTimeout(showVersionNotification, 1000);
+    <?php endif; ?>
 });
 
 // Close modal when clicking outside
