@@ -561,7 +561,7 @@ if ($task->customer_id) {
             </div>
         </div>
 
-        <?php if ($user_role_level <= 4): // Patron, Müdür, Müdür Yrd., Ekip Lideri ?>
+        <?php if (can_change_task_representative()): ?>
         <div class="ab-form-section">
             <h3><i class="fas fa-user-tie"></i> Atama Bilgileri</h3>
             
@@ -572,7 +572,7 @@ if ($task->customer_id) {
                         <option value="">Temsilci seçiniz...</option>
                         <?php 
                         foreach ($representatives as $rep): 
-                            // Ekip lideri için sadece kendi ekibini göster
+                            // Ekip lideri için sadece kendi ekibini göster (eğer role-based kısıtlama varsa)
                             if ($user_role_level == 4) {
                                 $team_members = get_team_members_ids($current_user_id);
                                 if (!in_array($rep->id, $team_members)) {
@@ -585,10 +585,11 @@ if ($task->customer_id) {
                             </option>
                         <?php endforeach; ?>
                     </select>
+                    <div class="ab-form-help">Görev temsilcisi değiştirme yetkisi ile düzenleyebilirsiniz.</div>
                 </div>
             </div>
         </div>
-        <?php else: // Müşteri Temsilcisi - sadece mevcut atama gösterilir, değiştirilemez ?>
+        <?php else: // Görev temsilcisi değiştirme yetkisi yok ?>
         <div class="ab-form-section">
             <h3><i class="fas fa-user-tie"></i> Atama Bilgileri</h3>
             
@@ -605,6 +606,7 @@ if ($task->customer_id) {
                         endforeach;
                         ?>
                     </div>
+                    <div class="ab-form-help">Görev temsilcisini değiştirmek için yetkiniz bulunmuyor.</div>
                     <!-- Hidden field to maintain the original assignment -->
                     <input type="hidden" id="assigned_to" name="assigned_to" value="<?php echo esc_attr($task->representative_id); ?>">
                 </div>

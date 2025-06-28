@@ -62,6 +62,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_representative_su
     $customer_delete = isset($_POST['customer_delete']) ? 1 : 0;
     $policy_edit = isset($_POST['policy_edit']) ? 1 : 0;
     $policy_delete = isset($_POST['policy_delete']) ? 1 : 0;
+    $task_edit = isset($_POST['task_edit']) ? 1 : 0;
+    $export_data = isset($_POST['export_data']) ? 1 : 0;
+    $can_change_customer_representative = isset($_POST['can_change_customer_representative']) ? 1 : 0;
+    $can_change_policy_representative = isset($_POST['can_change_policy_representative']) ? 1 : 0;
+    $can_change_task_representative = isset($_POST['can_change_task_representative']) ? 1 : 0;
+    $can_view_deleted_policies = isset($_POST['can_view_deleted_policies']) ? 1 : 0;
+    $can_restore_deleted_policies = isset($_POST['can_restore_deleted_policies']) ? 1 : 0;
     
     // Personal information fields
     $birth_date = isset($_POST['birth_date']) ? sanitize_text_field($_POST['birth_date']) : '';
@@ -169,6 +176,13 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_representative_su
                     'customer_delete' => $customer_delete,
                     'policy_edit' => $policy_edit,
                     'policy_delete' => $policy_delete,
+                    'task_edit' => $task_edit,
+                    'export_data' => $export_data,
+                    'can_change_customer_representative' => $can_change_customer_representative,
+                    'can_change_policy_representative' => $can_change_policy_representative,
+                    'can_change_task_representative' => $can_change_task_representative,
+                    'can_view_deleted_policies' => $can_view_deleted_policies,
+                    'can_restore_deleted_policies' => $can_restore_deleted_policies,
                     'birth_date' => !empty($birth_date) ? $birth_date : null,
                     'wedding_anniversary' => !empty($wedding_anniversary) ? $wedding_anniversary : null,
                     'children_birthdays' => $children_birthdays_json,
@@ -558,6 +572,83 @@ foreach ($teams as $team) {
                                     <div class="label-text">
                                         <span class="label-title"><i class="fas fa-file-times"></i> Poliçe Silme</span>
                                         <span class="label-desc">Poliçe kaydını pasife alabilir/silebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="task_edit" value="1" <?php checked(isset($representative->task_edit) ? $representative->task_edit : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-tasks"></i> Görev Düzenleme</span>
+                                        <span class="label-desc">Görev bilgilerini düzenleyebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="export_data" value="1" <?php checked(isset($representative->export_data) ? $representative->export_data : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-download"></i> Veri Dışa Aktarma</span>
+                                        <span class="label-desc">Excel/PDF formatında veri aktarabilir</span>
+                                    </div>
+                                </label>
+                            </div>
+                            
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="can_change_customer_representative" value="1" <?php checked(isset($representative->can_change_customer_representative) ? $representative->can_change_customer_representative : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-user-edit"></i> Müşteri Temsilci Değişimi</span>
+                                        <span class="label-desc">Müşteri düzenlerken temsilci bilgisini değiştirebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="can_change_policy_representative" value="1" <?php checked(isset($representative->can_change_policy_representative) ? $representative->can_change_policy_representative : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-file-contract"></i> Poliçe Temsilci Değişimi</span>
+                                        <span class="label-desc">Poliçe düzenlerken temsilci bilgisini değiştirebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="can_change_task_representative" value="1" <?php checked(isset($representative->can_change_task_representative) ? $representative->can_change_task_representative : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-tasks"></i> Görev Temsilci Değişimi</span>
+                                        <span class="label-desc">Görev düzenlerken temsilci bilgisini değiştirebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="can_view_deleted_policies" value="1" <?php checked(isset($representative->can_view_deleted_policies) ? $representative->can_view_deleted_policies : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-eye"></i> Silinmiş Poliçeleri Görüntüleme</span>
+                                        <span class="label-desc">Silinmiş poliçeleri görebilir</span>
+                                    </div>
+                                </label>
+                            </div>
+
+                            <div class="modern-permissions-row">
+                                <label class="modern-checkbox-container">
+                                    <input type="checkbox" name="can_restore_deleted_policies" value="1" <?php checked(isset($representative->can_restore_deleted_policies) ? $representative->can_restore_deleted_policies : 0, 1); ?>>
+                                    <span class="modern-checkmark"></span>
+                                    <div class="label-text">
+                                        <span class="label-title"><i class="fas fa-trash-restore"></i> Silinmiş Poliçe Geri Getirme</span>
+                                        <span class="label-desc">Silinmiş poliçeyi geri getirebilir</span>
                                     </div>
                                 </label>
                             </div>

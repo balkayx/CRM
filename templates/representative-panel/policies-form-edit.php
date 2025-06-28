@@ -106,8 +106,8 @@ if (isset($_POST['save_policy']) && isset($_POST['policy_nonce']) && wp_verify_n
         'updated_at' => current_time('mysql')
     );
     
-    // Handle representative change (only for Patron and Müdür)
-    if (get_current_user_role() <= 2 && isset($_POST['representative_id']) && !empty($_POST['representative_id'])) {
+    // Handle representative change (with permission check)
+    if (function_exists('can_change_policy_representative') && can_change_policy_representative() && isset($_POST['representative_id']) && !empty($_POST['representative_id'])) {
         $policy_data['representative_id'] = intval($_POST['representative_id']);
     }
     
@@ -221,9 +221,9 @@ if ($current_user_role <= 2) { // Patron or Müdür
     $can_edit_policy_fields = ($policy->representative_id == $current_user_rep_id);
 }
 
-// Fetch all representatives for dropdown (only for Patron and Müdür)
+// Fetch all representatives for dropdown (for users with permission)
 $representatives = array();
-if ($current_user_role <= 2) { // Patron or Müdür
+if (function_exists('can_change_policy_representative') && can_change_policy_representative()) {
     $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
     $representatives = $wpdb->get_results(
         "SELECT r.id, u.display_name 
@@ -476,7 +476,7 @@ $selected_insured = !empty($policy->insured_list) ? array_map('trim', explode(',
                 <div class="ab-form-row">
                     <div class="ab-form-group">
                         <label for="representative">Poliçe Temsilcisi</label>
-                        <?php if ($current_user_role <= 2): // Patron or Müdür can change ?>
+                        <?php if (function_exists('can_change_policy_representative') && can_change_policy_representative()): ?>
                         <select name="representative_id" id="representative_id" class="ab-input">
                             <option value="">Seçiniz...</option>
                             <?php foreach ($representatives as $rep): ?>
@@ -485,10 +485,10 @@ $selected_insured = !empty($policy->insured_list) ? array_map('trim', explode(',
                             </option>
                             <?php endforeach; ?>
                         </select>
-                        <small class="ab-form-help">Sadece Patron ve Müdür temsilci değişikliği yapabilir.</small>
+                        <small class="ab-form-help">Poliçe temsilci değişimi yetkisi ile düzenleyebilirsiniz.</small>
                         <?php else: // Other roles see read-only ?>
                         <input type="text" class="ab-input" value="<?php echo esc_attr($current_representative_name ?: 'Belirsiz'); ?>" readonly>
-                        <small class="ab-form-help">Temsilci bilgisi sadece Patron ve Müdür tarafından değiştirilebilir.</small>
+                        <small class="ab-form-help">Poliçe temsilci değişimi yetkisi bulunmamaktadır.</small>
                         <?php endif; ?>
                     </div>
                 </div>

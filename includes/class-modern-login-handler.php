@@ -255,6 +255,10 @@ class InsuranceCrmModernLogin {
      */
     public function after_successful_login($user_login, $user) {
         error_log("Insurance CRM: User {$user_login} logged in successfully");
+        
+        // Set a transient to show update notification popup after login
+        // This will be checked on the dashboard page and trigger the popup
+        set_transient('insurance_crm_show_popup_' . $user->ID, true, 60); // Expires in 60 seconds
     }
     
     /**

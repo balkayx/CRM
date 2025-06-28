@@ -1588,6 +1588,292 @@ function insurance_crm_rep_panel_scripts() {
 include_once __DIR__ . '/loader.php'; 
 ?>
 
+<!-- Version Notification Modal -->
+<?php 
+$announcement_settings = get_option('insurance_crm_settings', array());
+$announcements = isset($announcement_settings['update_announcements']) ? $announcement_settings['update_announcements'] : array();
+$show_announcements = isset($announcements['enabled']) && $announcements['enabled'];
+$announcement_title = isset($announcements['title']) ? $announcements['title'] : 'Sistem Güncellemeleri';
+$announcement_content = isset($announcements['content']) ? $announcements['content'] : '';
+
+// Get plugin version from the main plugin file
+$plugin_data = get_file_data(INSURANCE_CRM_PATH . 'insurance-crm.php', array('Version' => 'Version'));
+$current_plugin_version = $plugin_data['Version'];
+$announcement_version = isset($announcements['version']) ? $announcements['version'] : $current_plugin_version;
+
+// Check if user just logged in
+$current_user_id = get_current_user_id();
+$just_logged_in = get_transient('insurance_crm_show_popup_' . $current_user_id);
+if ($just_logged_in) {
+    // Delete the transient so it doesn't show again
+    delete_transient('insurance_crm_show_popup_' . $current_user_id);
+}
+?>
+
+<?php if ($show_announcements && !empty($announcement_content)): ?>
+<div id="versionNotificationModal" class="version-modal" style="display: none;">
+    <div class="version-modal-content">
+        <span class="version-modal-close" onclick="closeVersionModal()">&times;</span>
+        <div class="version-modal-header">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+                <div></div>
+                <div style="background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 500;">
+                    v<?php echo esc_html($announcement_version); ?>
+                </div>
+                <span class="version-modal-close" onclick="closeVersionModal()">&times;</span>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
+                <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 50%; margin-right: 20px;">
+                    <i class="fas fa-rocket" style="font-size: 40px;"></i>
+                </div>
+                <div>
+                    <h2 style="margin: 0; font-size: 24px; font-weight: 600;"><?php echo esc_html($announcement_title); ?></h2>
+                </div>
+            </div>
+        </div>
+        <div class="version-modal-body">
+            <?php echo wp_kses_post($announcement_content); ?>
+        </div>
+        <div class="version-modal-footer">
+            <button onclick="showVersionAgain()" class="version-modal-btn-secondary">
+                <i class="fas fa-redo"></i> Tekrar Göster
+            </button>
+            <button onclick="closeVersionModal()" class="version-modal-btn">
+                <i class="fas fa-check"></i> Anladım, Devam Et
+            </button>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+
+<style>
+.version-modal {
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    backdrop-filter: blur(5px);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.version-modal-content {
+    background-color: #ffffff;
+    margin: 5% auto;
+    padding: 0;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    animation: modalFadeIn 0.3s ease-out;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: translateY(-50px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.version-modal-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 25px 30px;
+    border-radius: 12px 12px 0 0;
+    position: relative;
+}
+
+.version-modal-header h2 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+}
+
+.version-modal-close {
+    position: absolute;
+    right: 20px;
+    top: 20px;
+    color: white;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.version-modal-close:hover {
+    transform: scale(1.1);
+    opacity: 0.7;
+}
+
+.version-modal-body {
+    padding: 30px;
+}
+
+.version-feature {
+    margin-bottom: 25px;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+}
+
+.version-feature h3 {
+    margin: 0 0 10px 0;
+    color: #2d3748;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.version-feature p {
+    margin: 0;
+    color: #4a5568;
+    line-height: 1.6;
+}
+
+.version-modal-footer {
+    padding: 20px 30px 30px;
+    text-align: center;
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+}
+
+.version-modal-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.version-modal-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.version-modal-btn-secondary {
+    background: #e2e8f0;
+    color: #4a5568;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.version-modal-btn-secondary:hover {
+    background: #cbd5e0;
+    transform: translateY(-2px);
+}
+</style>
+
+<script>
+function showVersionNotification() {
+    <?php if ($show_announcements && !empty($announcement_content) && $just_logged_in): ?>
+    const currentVersion = '<?php echo esc_js($announcement_version); ?>';
+    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    
+    console.log('Version check - Current:', currentVersion);
+    console.log('Version check - ViewedKey:', viewedKey);
+    console.log('Version check - Previously viewed:', localStorage.getItem(viewedKey));
+    
+    // Check if this version notification has been viewed
+    <?php if (isset($announcements['show_to_all']) && $announcements['show_to_all']): ?>
+    // Show to all users after login - don't check localStorage  
+    console.log('Showing popup to all users');
+    const modal = document.getElementById('versionNotificationModal');
+    if (modal) {
+        modal.style.display = 'block';
+        // Add a slight delay for smooth animation
+        setTimeout(() => {
+            modal.style.opacity = '1';
+        }, 50);
+    }
+    <?php else: ?>
+    // Only show if not viewed before and user just logged in
+    if (!localStorage.getItem(viewedKey)) {
+        console.log('Showing popup for new version');
+        const modal = document.getElementById('versionNotificationModal');
+        if (modal) {
+            modal.style.display = 'block';
+            // Add a slight delay for smooth animation
+            setTimeout(() => {
+                modal.style.opacity = '1';
+            }, 50);
+        }
+    } else {
+        console.log('Version already viewed, not showing popup');
+    }
+    <?php endif; ?>
+    <?php endif; ?>
+}
+
+function closeVersionModal() {
+    <?php if ($show_announcements && !empty($announcement_content)): ?>
+    const currentVersion = '<?php echo esc_js($announcement_version); ?>';
+    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    
+    console.log('Closing modal and marking version as viewed:', viewedKey);
+    
+    // Mark this version as viewed
+    localStorage.setItem(viewedKey, 'true');
+    
+    // Smooth hide animation
+    const modal = document.getElementById('versionNotificationModal');
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 300);
+    }
+    <?php endif; ?>
+}
+
+function showVersionAgain() {
+    <?php if ($show_announcements && !empty($announcement_content)): ?>
+    const currentVersion = '<?php echo esc_js($announcement_version); ?>';
+    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    
+    console.log('User clicked Show Again, removing version from viewed list:', viewedKey);
+    
+    // Remove this version from viewed list so it will show again next login
+    localStorage.removeItem(viewedKey);
+    
+    // Close the modal
+    const modal = document.getElementById('versionNotificationModal');
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 300);
+    }
+    <?php endif; ?>
+}
+
+// Show notification when page loads (only if user just logged in)
+document.addEventListener('DOMContentLoaded', function() {
+    <?php if ($just_logged_in): ?>
+    // Wait a bit for page to load completely, then show if user just logged in
+    setTimeout(showVersionNotification, 1000);
+    <?php endif; ?>
+});
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+    const modal = document.getElementById('versionNotificationModal');
+    if (event.target == modal) {
+        closeVersionModal();
+    }
+}
+</script>
+
     <div class="insurance-crm-sidenav">
         
         <div class="sidenav-user">

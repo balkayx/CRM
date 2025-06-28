@@ -123,26 +123,13 @@ if (!function_exists('can_edit_policy')) {
         global $wpdb;
         $rep_permissions = get_rep_permissions();
         
-        if ($role_level === 1) return true; // Patron
-        if ($role_level === 5) { // Müşteri Temsilcisi
-            if (!$rep_permissions || $rep_permissions->policy_edit != 1) return false;
-            $policy_owner = $wpdb->get_var($wpdb->prepare(
-                "SELECT representative_id FROM {$wpdb->prefix}insurance_crm_policies WHERE id = %d", 
-                $policy_id
-            ));
-            return $policy_owner == $user_rep_id;
+        // Patron (role 1) ve Müdür (role 2) her zaman tam yetkiye sahip
+        if ($role_level === 1 || $role_level === 2) {
+            return true;
         }
-        if ($role_level === 4) { // Ekip Lideri
-            if (!$rep_permissions || $rep_permissions->policy_edit != 1) return false;
-            $team_members = get_team_members_ids(get_current_user_id());
-            $policy_owner = $wpdb->get_var($wpdb->prepare(
-                "SELECT representative_id FROM {$wpdb->prefix}insurance_crm_policies WHERE id = %d", 
-                $policy_id
-            ));
-            return in_array($policy_owner, $team_members);
-        }
-        if (($role_level === 2 || $role_level === 3) && $rep_permissions && $rep_permissions->policy_edit == 1) return true;
-        return false;
+        
+        // Diğer tüm roller için sadece kullanıcı bazlı yetki kontrolü
+        return $rep_permissions && isset($rep_permissions->policy_edit) && $rep_permissions->policy_edit == 1;
     }
 }
 
@@ -151,19 +138,13 @@ if (!function_exists('can_delete_policy')) {
         global $wpdb;
         $rep_permissions = get_rep_permissions();
         
-        if ($role_level === 1) return true; // Patron
-        if ($role_level === 5) return false; // Müşteri temsilcileri silemez
-        if ($role_level === 4) { // Ekip Lideri
-            if (!$rep_permissions || $rep_permissions->policy_delete != 1) return false;
-            $team_members = get_team_members_ids(get_current_user_id());
-            $policy_owner = $wpdb->get_var($wpdb->prepare(
-                "SELECT representative_id FROM {$wpdb->prefix}insurance_crm_policies WHERE id = %d", 
-                $policy_id
-            ));
-            return in_array($policy_owner, $team_members);
+        // Patron (role 1) ve Müdür (role 2) her zaman tam yetkiye sahip
+        if ($role_level === 1 || $role_level === 2) {
+            return true;
         }
-        if (($role_level === 2 || $role_level === 3) && $rep_permissions && $rep_permissions->policy_delete == 1) return true;
-        return false;
+        
+        // Diğer tüm roller için sadece kullanıcı bazlı yetki kontrolü
+        return $rep_permissions && isset($rep_permissions->policy_delete) && $rep_permissions->policy_delete == 1;
     }
 }
 
@@ -199,7 +180,22 @@ if (!class_exists('ModernPolicyManager')) {
             $this->user_rep_id = $this->getCurrentUserRepId();
             $this->user_role_level = $this->getUserRoleLevel();
             $this->is_team_view = (isset($_GET['view_type']) && $_GET['view_type'] === 'team');
-            $this->show_deleted = (isset($_GET['show_deleted']) && $_GET['show_deleted'] === '1');
+            
+            // Access control for deleted policies view
+            $requested_show_deleted = (isset($_GET['show_deleted']) && $_GET['show_deleted'] === '1');
+            if ($requested_show_deleted) {
+                // Check if user has permission to view deleted policies
+                if (function_exists('can_view_deleted_policies') && can_view_deleted_policies()) {
+                    $this->show_deleted = true;
+                } else {
+                    // Redirect back to active policies if no permission
+                    $redirect_url = remove_query_arg('show_deleted', $_SERVER['REQUEST_URI']);
+                    wp_safe_redirect($redirect_url);
+                    exit;
+                }
+            } else {
+                $this->show_deleted = false;
+            }
 
             $this->initializeDatabase();
             $this->performAutoPassivation();
@@ -600,9 +596,17 @@ if (!class_exists('ModernPolicyManager')) {
             $where_conditions = ['1=1'];
             $params = [];
 
-            // NEW: Handle deleted policies
-            if ($this->isShowDeletedMode() && $this->user_role_level <= 2) {
-                $where_conditions[] = 'p.is_deleted = 1';
+            // NEW: Handle deleted policies with proper permission check
+            if ($this->isShowDeletedMode()) {
+                // Patron and Manager can see all deleted policies
+                if ($this->user_role_level <= 2) {
+                    $where_conditions[] = 'p.is_deleted = 1';
+                } else {
+                    // Other users can only see their own deleted policies if they have permission
+                    $where_conditions[] = 'p.is_deleted = 1';
+                    $where_conditions[] = 'p.representative_id = %d';
+                    $params[] = $this->user_rep_id;
+                }
             } else {
                 $where_conditions[] = 'p.is_deleted = 0';
             }
@@ -1264,15 +1268,24 @@ $restore_response = null;
 if (isset($_GET['action']) && $_GET['action'] === 'restore' && isset($_GET['id'])) {
     $policy_id = intval($_GET['id']);
     
-    // Verify nonce
-    if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'restore_policy_' . $policy_id)) {
-        $restore_response = $policy_manager->handlePolicyRestore($policy_id);
-    } else {
+    // Check permissions first
+    if (!function_exists('can_restore_deleted_policies') || !can_restore_deleted_policies()) {
         $restore_response = [
             'success' => false,
-            'message' => 'Güvenlik doğrulaması başarısız oldu.',
+            'message' => 'Bu işlem için yetkiniz bulunmamaktadır.',
             'type' => 'error'
         ];
+    } else {
+        // Verify nonce
+        if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'restore_policy_' . $policy_id)) {
+            $restore_response = $policy_manager->handlePolicyRestore($policy_id);
+        } else {
+            $restore_response = [
+                'success' => false,
+                'message' => 'Güvenlik doğrulaması başarısız oldu.',
+                'type' => 'error'
+            ];
+        }
     }
 }
 
@@ -1453,12 +1466,12 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
                     <?php endif; ?>
                 </div>
 
-                <?php if ($policy_manager->getUserRoleLevel() <= 2 && !$policy_manager->isShowDeletedMode()): ?>
+                <?php if (function_exists('can_view_deleted_policies') && can_view_deleted_policies() && !$policy_manager->isShowDeletedMode()): ?>
                 <a href="<?php echo esc_url($policy_manager->getShowDeletedUrl()); ?>" class="btn btn-warning">
                     <i class="fas fa-trash-alt"></i>
                     <span>Silinen Poliçeler</span>
                 </a>
-                <?php elseif ($policy_manager->getUserRoleLevel() <= 2 && $policy_manager->isShowDeletedMode()): ?>
+                <?php elseif (function_exists('can_view_deleted_policies') && can_view_deleted_policies() && $policy_manager->isShowDeletedMode()): ?>
                 <a href="<?php echo esc_url($policy_manager->getShowActiveUrl()); ?>" class="btn btn-info">
                     <i class="fas fa-check-circle"></i>
                     <span>Aktif Poliçeler</span>
@@ -1929,7 +1942,7 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
                 </div>
             </div>
             
-            <?php if ($policy_manager->getUserRoleLevel() <= 2): ?>
+            <?php if (function_exists('can_view_deleted_policies') && can_view_deleted_policies()): ?>
             <div class="stat-card dark">
                 <div class="stat-icon">
                     <i class="fas fa-trash-alt"></i>
@@ -2167,7 +2180,7 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
         <!-- Tüm İşlem Butonları Tek Satırda -->
         <div class="all-actions">
             <?php if ($policy_manager->isShowDeletedMode()): ?>
-                <?php if ($policy_manager->getUserRoleLevel() <= 2): ?>
+                <?php if (function_exists('can_restore_deleted_policies') && can_restore_deleted_policies()): ?>
                 <a href="<?php echo wp_nonce_url('?view=policies&action=restore&id=' . $policy->id, 'restore_policy_' . $policy->id); ?>" 
                    class="btn btn-xs btn-success" title="Geri Getir" onclick="return confirm('Bu poliçeyi geri getirmek istediğinizden emin misiniz?');">
                     <i class="fas fa-trash-restore"></i>
@@ -2301,7 +2314,7 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
             </div>
             <div class="restore-info">
                 <i class="fas fa-info-circle"></i>
-                <p>Silinmiş poliçeleri yalnızca Patron veya Müdür seviyesindeki kullanıcılar geri getirebilir.</p>
+                <p>Silinmiş poliçeleri yalnızca yetkilendirilmiş kullanıcılar geri getirebilir.</p>
             </div>
         </div>
         <div class="modal-footer">

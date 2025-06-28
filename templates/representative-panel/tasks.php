@@ -35,6 +35,20 @@ if (!function_exists('get_current_user_rep_id')) {
         ));
     }
 }
+
+// Mevcut kullanıcının temsilci verilerini al
+if (!function_exists('get_current_user_rep_data')) {
+    function get_current_user_rep_data() {
+        global $wpdb;
+        $current_user_id = get_current_user_id();
+        return $wpdb->get_row($wpdb->prepare(
+            "SELECT id, role, customer_edit, customer_delete, policy_edit, policy_delete, task_edit, task_delete 
+             FROM {$wpdb->prefix}insurance_crm_representatives 
+             WHERE user_id = %d AND status = 'active'",
+            $current_user_id
+        ));
+    }
+}
 $current_user_rep_id = get_current_user_rep_id();
 $current_user_id = get_current_user_id();
 
@@ -320,8 +334,13 @@ $user_role_level = get_user_role_level();
 $current_view = isset($_GET['view_type']) ? sanitize_text_field($_GET['view_type']) : 'personal';
 $is_team_view = ($current_view === 'team');
 
-// Görev silme işlemi (Sadece WP Admin/Insurance Manager, Patron, Müdür silebilir)
-$can_delete_tasks = $is_wp_admin_or_manager || is_patron($current_user_id) || is_manager($current_user_id);
+// Görev düzenleme/silme yetki kontrolü için rep_permissions al
+$current_rep = get_current_user_rep_data();
+
+// Görev silme işlemi (Patron, Müdür veya task_edit yetkisi olan kullanıcılar silebilir)
+$can_delete_tasks = $is_wp_admin_or_manager || 
+                   ($current_rep && ($current_rep->role == 1 || $current_rep->role == 2)) ||
+                   ($current_rep && isset($current_rep->task_edit) && $current_rep->task_edit == 1);
 if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
     $task_id = intval($_GET['id']);
     if (isset($_GET['_wpnonce']) && wp_verify_nonce($_GET['_wpnonce'], 'delete_task_' . $task_id)) {

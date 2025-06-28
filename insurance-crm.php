@@ -10,9 +10,9 @@
  * Plugin Name: Insurance CRM
  * Plugin URI: https://github.com/anadolubirlik/insurance-crm
  * Description: Sigorta acenteleri için müşteri, poliçe ve görev yönetim sistemi.
- * Version: 1.8.2
+ * Version: 1.9.5
  * Pagename: insurance-crm.php
- * Page Version: 1.8.2
+ * Page Version: 1.9.3
  * Author: Mehmet BALKAY | Anadolu Birlik
  * Author URI: https://www.balkay.net
  */
@@ -229,7 +229,7 @@ add_action('init', 'force_update_crm_db', 5);
 /**
  * Plugin version.
  */
-define('INSURANCE_CRM_VERSION', '1.8.1');
+define('INSURANCE_CRM_VERSION', '1.8.9');
 
 /**
  * Plugin base path
@@ -667,6 +667,32 @@ function insurance_crm_check_db_tables() {
         $wpdb->query("ALTER TABLE {$wpdb->prefix}insurance_crm_customers ADD COLUMN uavt_code VARCHAR(50) DEFAULT NULL AFTER address");
         error_log('insurance_crm_customers tablosuna uavt_code sütunu eklendi.');
     }
+    
+    // User-based permission columns check and add - Updated in v1.9.0
+    $permission_columns = [
+        'role' => 'INT DEFAULT 5',
+        'customer_edit' => 'TINYINT(1) DEFAULT 1',
+        'customer_delete' => 'TINYINT(1) DEFAULT 0',
+        'policy_edit' => 'TINYINT(1) DEFAULT 1',
+        'policy_delete' => 'TINYINT(1) DEFAULT 0',
+        'task_edit' => 'TINYINT(1) DEFAULT 1',
+        'export_data' => 'TINYINT(1) DEFAULT 0',
+        'bulk_operations' => 'TINYINT(1) DEFAULT 0',
+        'can_change_customer_representative' => 'TINYINT(1) DEFAULT 0',
+        'can_change_policy_representative' => 'TINYINT(1) DEFAULT 0',
+        'can_change_task_representative' => 'TINYINT(1) DEFAULT 0',
+        'can_view_deleted_policies' => 'TINYINT(1) DEFAULT 0',
+        'can_restore_deleted_policies' => 'TINYINT(1) DEFAULT 0'
+    ];
+    
+    foreach ($permission_columns as $column_name => $column_definition) {
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}insurance_crm_representatives LIKE '{$column_name}'");
+        
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE {$wpdb->prefix}insurance_crm_representatives ADD COLUMN {$column_name} {$column_definition} AFTER status");
+            error_log("insurance_crm_representatives tablosuna {$column_name} sütunu eklendi.");
+        }
+    }
 }
 
 add_action('plugins_loaded', 'insurance_crm_check_db_tables');
@@ -1022,6 +1048,57 @@ function insurance_crm_update_check() {
     }
 }
 add_action('plugins_loaded', 'insurance_crm_update_check');
+
+/**
+ * User-based permission helper functions
+ * @since 1.9.2
+ */
+function has_user_permission($permission_name) {
+    global $wpdb;
+    $current_user_rep_id = function_exists('get_current_user_rep_id') ? get_current_user_rep_id() : 0;
+    
+    if (!$current_user_rep_id) {
+        return false;
+    }
+    
+    $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
+    $user_data = $wpdb->get_row($wpdb->prepare(
+        "SELECT role, $permission_name FROM $representatives_table WHERE id = %d",
+        $current_user_rep_id
+    ));
+    
+    if (!$user_data) {
+        return false;
+    }
+    
+    // Patron (1) and Müdür (2) have full permissions
+    if ($user_data->role == 1 || $user_data->role == 2) {
+        return true;
+    }
+    
+    // Check individual permission
+    return $user_data->$permission_name == 1;
+}
+
+function can_change_customer_representative() {
+    return has_user_permission('can_change_customer_representative');
+}
+
+function can_change_policy_representative() {
+    return has_user_permission('can_change_policy_representative');
+}
+
+function can_change_task_representative() {
+    return has_user_permission('can_change_task_representative');
+}
+
+function can_view_deleted_policies() {
+    return has_user_permission('can_view_deleted_policies');
+}
+
+function can_restore_deleted_policies() {
+    return has_user_permission('can_restore_deleted_policies');
+}
 
 /**
  * 1.0.3 versiyonu için gerekli dosyaları oluştur
