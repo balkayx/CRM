@@ -2398,18 +2398,8 @@ window.onclick = function(event) {
                             <h1>
                                 Sigorta CRM Dashboard
                                 <?php 
-                                // Get version from main insurance-crm.php file
-                                $main_file_path = dirname(dirname(dirname(__FILE__))) . '/insurance-crm.php';
-                                $version = '1.0.0'; // Default fallback
-                                
-                                if (file_exists($main_file_path)) {
-                                    $file_content = file_get_contents($main_file_path);
-                                    if (preg_match('/Plugin Version:\s*([0-9.]+)/', $file_content, $matches)) {
-                                        $version = $matches[1];
-                                    } elseif (preg_match('/Page Version:\s*([0-9.]+)/', $file_content, $matches)) {
-                                        $version = $matches[1];
-                                    }
-                                }
+                                // Use the already retrieved plugin version data
+                                $version = $current_plugin_version;
                                 ?>
                                 <span class="dashboard-version-badge">v<?php echo esc_html($version); ?></span>
                             </h1>
