@@ -5873,7 +5873,7 @@ function exportPoliciesData(format) {
         if (xhr.status === 200) {
             // Create blob and download
             const blob = new Blob([xhr.response], { 
-                type: format === 'csv' ? 'text/csv' : 'text/html' 
+                type: format === 'csv' ? 'text/csv' : 'application/pdf' 
             });
             
             const url = window.URL.createObjectURL(blob);
@@ -5887,7 +5887,7 @@ function exportPoliciesData(format) {
             if (disposition && disposition.indexOf('filename=') !== -1) {
                 filename = disposition.split('filename=')[1].replace(/"/g, '');
             } else {
-                filename += format === 'csv' ? '.csv' : '.html';
+                filename += format === 'csv' ? '.csv' : '.pdf';
             }
             
             a.download = filename;

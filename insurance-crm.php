@@ -2933,23 +2933,52 @@ function export_customers_data($format, $filters) {
     $where_conditions = ["c.deleted_at IS NULL"];
     $query_params = [];
     
-    // Apply basic filters
-    if (!empty($filters['customer_search'])) {
-        $search_term = '%' . sanitize_text_field($filters['customer_search']) . '%';
-        $where_conditions[] = "(c.first_name LIKE %s OR c.last_name LIKE %s OR c.tc_identity LIKE %s OR c.tax_number LIKE %s)";
-        $query_params[] = $search_term;
+    // Apply customer name filter (sent as 'customer_name' parameter)
+    if (!empty($filters['customer_name'])) {
+        $search_term = '%' . sanitize_text_field($filters['customer_name']) . '%';
+        $where_conditions[] = "(c.first_name LIKE %s OR c.last_name LIKE %s OR CONCAT(c.first_name, ' ', c.last_name) LIKE %s)";
         $query_params[] = $search_term;
         $query_params[] = $search_term;
         $query_params[] = $search_term;
     }
     
-    $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
+    // Apply date range filters
+    if (!empty($filters['start_date'])) {
+        $where_conditions[] = "DATE(c.created_at) >= %s";
+        $query_params[] = sanitize_text_field($filters['start_date']);
+    }
+    
+    if (!empty($filters['end_date'])) {
+        $where_conditions[] = "DATE(c.created_at) <= %s";
+        $query_params[] = sanitize_text_field($filters['end_date']);
+    }
+    
+    // Apply TC/Tax number filters if provided
+    if (!empty($filters['tc_identity'])) {
+        $where_conditions[] = "c.tc_identity LIKE %s";
+        $query_params[] = '%' . sanitize_text_field($filters['tc_identity']) . '%';
+    }
+    
+    if (!empty($filters['tax_number'])) {
+        $where_conditions[] = "c.tax_number LIKE %s";
+        $query_params[] = '%' . sanitize_text_field($filters['tax_number']) . '%';
+    }
+    
+    if (!empty($filters['company_name'])) {
+        $where_conditions[] = "c.company_name LIKE %s";
+        $query_params[] = '%' . sanitize_text_field($filters['company_name']) . '%';
+    }
+    
+    // Build the WHERE clause - always include deleted_at IS NULL
+    $where_clause = "WHERE " . implode(" AND ", $where_conditions);
     
     $query = "
         SELECT c.*, 
-               u.display_name as representative_name
+               u.display_name as representative_name,
+               t.name as team_name
         FROM {$wpdb->prefix}insurance_crm_customers c
         LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON c.representative_id = r.id
+        LEFT JOIN {$wpdb->prefix}insurance_crm_teams t ON r.team_id = t.id
         LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
         $where_clause
         ORDER BY c.created_at DESC
@@ -3059,117 +3088,151 @@ function export_policies_pdf($policies) {
     // Clear any previous output
     ob_clean();
     
-    header('Content-Type: text/html; charset=utf-8');
-    header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.html"');
+    // Set headers for PDF download
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.pdf"');
     header('Cache-Control: no-cache, must-revalidate');
     
-    // Create HTML for PDF conversion
-    $html = '<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Poliçe Listesi - ' . date('d.m.Y') . '</title>
-        <style>
-            body { font-family: Arial, sans-serif; font-size: 12px; }
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; font-weight: bold; }
-            .header { text-align: center; margin-bottom: 20px; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h2>Poliçe Listesi</h2>
-            <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
-            <p>Toplam Kayıt: ' . count($policies) . '</p>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Müşteri</th>
-                    <th>Poliçe No</th>
-                    <th>Tür</th>
-                    <th>Şirket</th>
-                    <th>Başlangıç</th>
-                    <th>Bitiş</th>
-                    <th>Prim</th>
-                    <th>Durum</th>
-                </tr>
-            </thead>
-            <tbody>';
-    
-    foreach ($policies as $policy) {
-        $html .= '<tr>
-            <td>' . esc_html(($policy->first_name ?? '') . ' ' . ($policy->last_name ?? '')) . '</td>
-            <td>' . esc_html($policy->policy_number ?? '') . '</td>
-            <td>' . esc_html($policy->policy_type ?? '') . '</td>
-            <td>' . esc_html($policy->insurance_company ?? '') . '</td>
-            <td>' . ($policy->start_date ? date('d.m.Y', strtotime($policy->start_date)) : '') . '</td>
-            <td>' . ($policy->end_date ? date('d.m.Y', strtotime($policy->end_date)) : '') . '</td>
-            <td>' . ($policy->premium_amount ? number_format($policy->premium_amount, 2) . ' ₺' : '0 ₺') . '</td>
-            <td>' . esc_html($policy->status ?? '') . '</td>
-        </tr>';
-    }
-    
-    $html .= '</tbody></table></body></html>';
-    
-    echo $html;
-    exit;
+    // Generate simple PDF content using basic PDF structure
+    generate_simple_pdf_content('Poliçe Listesi', $policies, 'policies');
 }
 
 function export_customers_pdf($customers) {
     // Clear any previous output
     ob_clean();
     
-    header('Content-Type: text/html; charset=utf-8');
-    header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.html"');
+    // Set headers for PDF download
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.pdf"');
     header('Cache-Control: no-cache, must-revalidate');
     
-    // Create HTML for PDF conversion
-    $html = '<!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <title>Müşteri Listesi - ' . date('d.m.Y') . '</title>
-        <style>
-            body { font-family: Arial, sans-serif; font-size: 12px; }
-            table { border-collapse: collapse; width: 100%; }
-            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-            th { background-color: #f2f2f2; font-weight: bold; }
-            .header { text-align: center; margin-bottom: 20px; }
-        </style>
-    </head>
-    <body>
-        <div class="header">
-            <h2>Müşteri Listesi</h2>
-            <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
-            <p>Toplam Kayıt: ' . count($customers) . '</p>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Ad Soyad</th>
-                    <th>TC/VKN</th>
-                    <th>Telefon</th>
-                    <th>Email</th>
-                    <th>Temsilci</th>
-                </tr>
-            </thead>
-            <tbody>';
+    // Generate simple PDF content using basic PDF structure
+    generate_simple_pdf_content('Müşteri Listesi', $customers, 'customers');
+}
+
+// Simple PDF generation function for fallback
+function generate_simple_pdf_content($title, $data, $type) {
+    // Create a more comprehensive PDF structure
+    $pdf_content = "%PDF-1.4\n";
     
-    foreach ($customers as $customer) {
-        $html .= '<tr>
-            <td>' . esc_html(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? '')) . '</td>
-            <td>' . esc_html($customer->tc_identity ?: $customer->tax_number ?: '') . '</td>
-            <td>' . esc_html($customer->phone ?? '') . '</td>
-            <td>' . esc_html($customer->email ?? '') . '</td>
-            <td>' . esc_html($customer->representative_name ?? '') . '</td>
-        </tr>';
+    // Objects
+    $objects = [];
+    $current_obj = 1;
+    
+    // Catalog
+    $objects[$current_obj] = "1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n";
+    $current_obj++;
+    
+    // Pages
+    $objects[$current_obj] = "2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n";
+    $current_obj++;
+    
+    // Page
+    $objects[$current_obj] = "3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 595 842]\n/Contents 4 0 R\n/Resources <<\n/Font <<\n/F1 5 0 R\n/F2 6 0 R\n>>\n>>\n>>\nendobj\n";
+    $current_obj++;
+    
+    // Content
+    $content = "BT\n";
+    $content .= "/F2 16 Tf\n"; // Bold font for title
+    $content .= "50 800 Td\n";
+    $content .= "($title) Tj\n";
+    $content .= "/F1 12 Tf\n"; // Regular font
+    $content .= "0 -20 Td\n";
+    $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
+    $content .= "0 -15 Td\n";
+    $content .= "(Toplam Kayit: " . count($data) . ") Tj\n";
+    $content .= "0 -30 Td\n";
+    
+    // Add table headers
+    if ($type === 'customers') {
+        $content .= "(ID    Ad Soyad                   TC Kimlik      Telefon        Email                     Temsilci) Tj\n";
+        $content .= "0 -15 Td\n";
+        $content .= "(---------------------------------------------------------------------------------) Tj\n";
+    } else {
+        $content .= "(ID    Musteri                  Police No      Tur           Sirket         Prim) Tj\n";
+        $content .= "0 -15 Td\n";
+        $content .= "(---------------------------------------------------------------------------------) Tj\n";
     }
     
-    $html .= '</tbody></table></body></html>';
+    $y_position = 720;
+    $items_per_page = 35;
+    $item_count = 0;
     
-    echo $html;
+    foreach ($data as $item) {
+        if ($item_count >= $items_per_page) break; // Limit for simple PDF
+        
+        $content .= "0 -15 Td\n";
+        
+        if ($type === 'customers') {
+            $line = sprintf("%-4s %-25s %-13s %-14s %-24s %s",
+                substr($item->id ?? '', 0, 4),
+                substr(($item->first_name ?? '') . ' ' . ($item->last_name ?? ''), 0, 25),
+                substr($item->tc_identity ?? $item->tax_number ?? '', 0, 13),
+                substr($item->phone ?? '', 0, 14),
+                substr($item->email ?? '', 0, 24),
+                substr($item->representative_name ?? '', 0, 15)
+            );
+        } else {
+            $line = sprintf("%-4s %-20s %-13s %-12s %-13s %s",
+                substr($item->id ?? '', 0, 4),
+                substr(($item->first_name ?? '') . ' ' . ($item->last_name ?? ''), 0, 20),
+                substr($item->policy_number ?? '', 0, 13),
+                substr($item->policy_type ?? '', 0, 12),
+                substr($item->insurance_company ?? '', 0, 13),
+                substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 10)
+            );
+        }
+        
+        // Clean the line for PDF (remove special characters)
+        $line = preg_replace('/[^\x20-\x7E]/', '?', $line);
+        $content .= "(" . $line . ") Tj\n";
+        
+        $item_count++;
+        $y_position -= 15;
+    }
+    
+    if (count($data) > $items_per_page) {
+        $content .= "0 -20 Td\n";
+        $content .= "(... ve " . (count($data) - $items_per_page) . " kayit daha. Tam liste icin CSV formatini kullaniniz.) Tj\n";
+    }
+    
+    $content .= "ET\n";
+    
+    $objects[$current_obj] = "4 0 obj\n<<\n/Length " . strlen($content) . "\n>>\nstream\n$content\nendstream\nendobj\n";
+    $current_obj++;
+    
+    // Regular font
+    $objects[$current_obj] = "5 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier\n>>\nendobj\n";
+    $current_obj++;
+    
+    // Bold font
+    $objects[$current_obj] = "6 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier-Bold\n>>\nendobj\n";
+    
+    // Combine all objects
+    $pdf_content .= implode('', $objects);
+    
+    // Build xref table
+    $xref_offset = strlen($pdf_content);
+    $pdf_content .= "xref\n";
+    $pdf_content .= "0 " . (count($objects) + 1) . "\n";
+    $pdf_content .= "0000000000 65535 f \n";
+    
+    $offset = 9; // Start after %PDF-1.4\n
+    foreach ($objects as $obj) {
+        $pdf_content .= sprintf("%010d 00000 n \n", $offset);
+        $offset += strlen($obj);
+    }
+    
+    // Trailer
+    $pdf_content .= "trailer\n";
+    $pdf_content .= "<<\n";
+    $pdf_content .= "/Size " . (count($objects) + 1) . "\n";
+    $pdf_content .= "/Root 1 0 R\n";
+    $pdf_content .= ">>\n";
+    $pdf_content .= "startxref\n";
+    $pdf_content .= "$xref_offset\n";
+    $pdf_content .= "%%EOF";
+    
+    echo $pdf_content;
     exit;
 }
-?>
