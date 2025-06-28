@@ -71,7 +71,7 @@ if (!$task) {
 }
 
 // Task note CRUD operations
-if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'edit_task_note', 'delete_task_note']) && isset($_POST['nonce']) && wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+if (isset($_POST['action']) && $_POST['action'] === 'save_task_note' && isset($_POST['nonce']) && wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
     $current_user_id = get_current_user_id();
     $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
     
@@ -109,72 +109,6 @@ if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'ed
             }
         } else {
             $notice_message = 'Not içeriği boş olamaz.';
-            $notice_type = 'error';
-        }
-    }
-    
-    // Handle edit task note
-    if ($_POST['action'] == 'edit_task_note' && isset($_POST['note_id']) && isset($_POST['note_content'])) {
-        $note_id = intval($_POST['note_id']);
-        $note_content = sanitize_textarea_field($_POST['note_content']);
-        
-        if (!empty($note_content)) {
-            $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
-            
-            // Check if user can edit this note
-            $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
-            if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
-                $result = $wpdb->update(
-                    $notes_table,
-                    array(
-                        'note_content' => $note_content,
-                        'updated_at' => current_time('mysql')
-                    ),
-                    array('id' => $note_id),
-                    array('%s', '%s'),
-                    array('%d')
-                );
-                
-                if ($result === false) {
-                    $notice_message = 'Not güncellenemedi. Hata: ' . $wpdb->last_error;
-                    $notice_type = 'error';
-                } else {
-                    $notice_message = 'Not başarıyla güncellendi.';
-                    $notice_type = 'success';
-                }
-            } else {
-                $notice_message = 'Bu notu düzenleme yetkiniz bulunmamaktadır.';
-                $notice_type = 'error';
-            }
-        } else {
-            $notice_message = 'Not içeriği boş olamaz.';
-            $notice_type = 'error';
-        }
-    }
-    
-    // Handle delete task note
-    if ($_POST['action'] == 'delete_task_note' && isset($_POST['note_id'])) {
-        $note_id = intval($_POST['note_id']);
-        $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
-        
-        // Check if user can delete this note
-        $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
-        if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
-            $result = $wpdb->delete(
-                $notes_table,
-                array('id' => $note_id),
-                array('%d')
-            );
-            
-            if ($result === false) {
-                $notice_message = 'Not silinemedi. Hata: ' . $wpdb->last_error;
-                $notice_type = 'error';
-            } else {
-                $notice_message = 'Not başarıyla silindi.';
-                $notice_type = 'success';
-            }
-        } else {
-            $notice_message = 'Bu notu silme yetkiniz bulunmamaktadır.';
             $notice_type = 'error';
         }
     }
@@ -292,21 +226,6 @@ if ($is_overdue) {
 
 ?>
 
-<?php if (isset($notice_message)): ?>
-    <div id="taskNoteNotice" class="task-note-notice-box task-note-notice-<?php echo esc_attr($notice_type); ?>">
-        <div class="task-note-notice-content">
-            <div class="task-note-notice-icon">
-                <i class="fas <?php echo $notice_type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'; ?>"></i>
-            </div>
-            <div class="task-note-notice-message">
-                <?php echo esc_html($notice_message); ?>
-            </div>
-            <button type="button" class="task-note-notice-dismiss" onclick="dismissTaskNoteNotice()">
-                Tamam
-            </button>
-        </div>
-    </div>
-<?php endif; ?>
 
 <div class="task-detail-container">
     <div class="task-header">
@@ -594,23 +513,6 @@ if ($is_overdue) {
                         <div class="sticky-note-header">
                             <span class="sticky-note-author"><?php echo esc_html($note->created_by_name); ?></span>
                             <span class="sticky-note-date"><?php echo esc_html($note->created_at_formatted); ?></span>
-                            <?php if ($note->can_edit): ?>
-                                <div class="sticky-note-actions">
-                                    <button type="button" class="sticky-note-edit" title="Notu Düzenle" 
-                                            onclick="showEditNoteModal(<?php echo $note->id; ?>, '<?php echo esc_js($note->note_content); ?>');">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <form method="post" action="" style="display: inline;">
-                                        <input type="hidden" name="action" value="delete_task_note">
-                                        <input type="hidden" name="note_id" value="<?php echo $note->id; ?>">
-                                        <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
-                                        <button type="submit" class="sticky-note-delete" title="Notu Sil" 
-                                                onclick="return confirm('Bu notu silmek istediğinizden emin misiniz?');">
-                                            <i class="fas fa-times"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            <?php endif; ?>
                         </div>
                         <div class="sticky-note-content">
                             <?php echo nl2br(esc_html($note->note_content)); ?>
@@ -659,35 +561,7 @@ if ($is_overdue) {
     </div>
 </div>
 
-<div id="editNoteModal" class="task-modal" style="display: none;">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3><i class="fas fa-edit"></i> Not Düzenle</h3>
-            <button class="modal-close" onclick="closeModal('editNoteModal')">
-                <i class="fas fa-times"></i>
-            </button>
-        </div>
-        <form method="post" action="">
-            <div class="modal-body">
-                <div class="form-group">
-                    <label for="editNoteContent">Not İçeriği:</label>
-                    <textarea name="note_content" id="editNoteContent" rows="5" placeholder="Not içeriğinizi buraya yazın..." required></textarea>
-                </div>
-                <input type="hidden" name="note_id" id="editNoteId" value="">
-                <input type="hidden" name="action" value="edit_task_note">
-                <input type="hidden" name="nonce" value="<?php echo wp_create_nonce('task_note_nonce'); ?>">
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="closeModal('editNoteModal')">
-                    <i class="fas fa-times"></i> İptal
-                </button>
-                <button type="submit" class="btn btn-primary">
-                    <i class="fas fa-save"></i> Güncelle
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
+
 
 <style>
 :root {
@@ -1638,50 +1512,6 @@ if ($is_overdue) {
     gap: 5px;
 }
 
-.sticky-note-edit {
-    width: 24px;
-    height: 24px;
-    background: rgba(255, 193, 7, 0.1);
-    border: 1px solid #ffc107;
-    border-radius: 50%;
-    color: #ffc107;
-    cursor: pointer;
-    font-size: 11px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    padding: 0;
-}
-
-.sticky-note-edit:hover {
-    background: #ffc107;
-    color: #333;
-    transform: scale(1.1);
-}
-
-.sticky-note-delete {
-    width: 24px;
-    height: 24px;
-    background: rgba(220, 53, 69, 0.1);
-    border: 1px solid #dc3545;
-    border-radius: 50%;
-    color: #dc3545;
-    cursor: pointer;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    padding: 0;
-}
-
-.sticky-note-delete:hover {
-    background: #dc3545;
-    color: white;
-    transform: scale(1.1);
-}
-
 .sticky-note-content {
     color: #333;
     line-height: 1.4;
@@ -1738,86 +1568,6 @@ if ($is_overdue) {
     
     .sticky-note:hover {
         transform: scale(1.02);
-    }
-}
-
-/* Task Note Notice Box Styles */
-.task-note-notice-box {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 9999;
-    max-width: 500px;
-    width: 90%;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    animation: slideInDown 0.3s ease-out;
-}
-
-.task-note-notice-success {
-    background: linear-gradient(135deg, #4caf50, #45a049);
-    color: white;
-}
-
-.task-note-notice-error {
-    background: linear-gradient(135deg, #f44336, #d32f2f);
-    color: white;
-}
-
-.task-note-notice-content {
-    display: flex;
-    align-items: center;
-    padding: 16px 20px;
-    gap: 12px;
-}
-
-.task-note-notice-icon {
-    font-size: 24px;
-    min-width: 24px;
-}
-
-.task-note-notice-message {
-    flex: 1;
-    font-weight: 500;
-    font-size: 15px;
-}
-
-.task-note-notice-dismiss {
-    background: rgba(255, 255, 255, 0.2);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s ease;
-}
-
-.task-note-notice-dismiss:hover {
-    background: rgba(255, 255, 255, 0.3);
-    border-color: rgba(255, 255, 255, 0.5);
-}
-
-@keyframes slideInDown {
-    from {
-        transform: translateX(-50%) translateY(-100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(-50%) translateY(0);
-        opacity: 1;
-    }
-}
-
-@keyframes slideOutUp {
-    from {
-        transform: translateX(-50%) translateY(0);
-        opacity: 1;
-    }
-    to {
-        transform: translateX(-50%) translateY(-100%);
-        opacity: 0;
     }
 }
 </style>
@@ -1898,28 +1648,7 @@ function showAddNoteModal(taskId) {
     textarea.focus();
 }
 
-function showEditNoteModal(noteId, noteContent) {
-    const modal = document.getElementById('editNoteModal');
-    const textarea = document.getElementById('editNoteContent');
-    const noteIdInput = document.getElementById('editNoteId');
-    
-    textarea.value = noteContent;
-    noteIdInput.value = noteId;
-    modal.style.display = 'flex';
-    textarea.focus();
-}
-
 function closeModal(modalId) {
     document.getElementById(modalId).style.display = 'none';
-}
-
-function dismissTaskNoteNotice() {
-    var noticeBox = document.getElementById('taskNoteNotice');
-    if (noticeBox) {
-        noticeBox.style.animation = 'slideOutUp 0.3s ease-in forwards';
-        setTimeout(function() {
-            noticeBox.remove();
-        }, 300);
-    }
 }
 </script>

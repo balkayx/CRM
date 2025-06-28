@@ -225,7 +225,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_quote_status' && iss
 
 // Task Notes functionality - adapted from tasks.php
 // Handle task note actions
-if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'edit_task_note', 'delete_task_note']) && isset($_POST['nonce']) && wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'delete_task_note']) && isset($_POST['nonce']) && wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
     $current_user_id = get_current_user_id();
     $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
     
@@ -260,45 +260,6 @@ if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'ed
                     $notice_message = 'Not başarıyla kaydedildi.';
                     $notice_type = 'success';
                 }
-            }
-        } else {
-            $notice_message = 'Not içeriği boş olamaz.';
-            $notice_type = 'error';
-        }
-    }
-    
-    // Handle edit task note
-    if ($_POST['action'] == 'edit_task_note' && isset($_POST['note_id']) && isset($_POST['note_content'])) {
-        $note_id = intval($_POST['note_id']);
-        $note_content = sanitize_textarea_field($_POST['note_content']);
-        
-        if (!empty($note_content)) {
-            $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
-            
-            // Check if user can edit this note
-            $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
-            if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
-                $result = $wpdb->update(
-                    $notes_table,
-                    array(
-                        'note_content' => $note_content,
-                        'updated_at' => current_time('mysql')
-                    ),
-                    array('id' => $note_id),
-                    array('%s', '%s'),
-                    array('%d')
-                );
-                
-                if ($result === false) {
-                    $notice_message = 'Not güncellenemedi. Hata: ' . $wpdb->last_error;
-                    $notice_type = 'error';
-                } else {
-                    $notice_message = 'Not başarıyla güncellendi.';
-                    $notice_type = 'success';
-                }
-            } else {
-                $notice_message = 'Bu notu düzenleme yetkiniz bulunmamaktadır.';
-                $notice_type = 'error';
             }
         } else {
             $notice_message = 'Not içeriği boş olamaz.';
@@ -2435,9 +2396,6 @@ function format_file_size($size) {
                                                         </div>
                                                         <?php if ($note->can_edit): ?>
                                                         <div class="task-note-actions">
-                                                            <button type="button" class="task-note-edit-btn" onclick="editTaskNote(<?php echo $note->id; ?>, '<?php echo esc_js($note->note_content); ?>')" title="Düzenle">
-                                                                <i class="fas fa-edit"></i>
-                                                            </button>
                                                             <button type="button" class="task-note-delete-btn" onclick="deleteTaskNote(<?php echo $note->id; ?>)" title="Sil">
                                                                 <i class="fas fa-trash"></i>
                                                             </button>
@@ -5682,79 +5640,6 @@ function toggleTaskNotes(taskId) {
     } else {
         notesRow.style.display = 'none';
     }
-}
-
-function editTaskNote(noteId, noteContent) {
-    // Create edit form dynamically
-    var noteDiv = document.querySelector('.task-note[data-note-id="' + noteId + '"]');
-    if (!noteDiv) return;
-    
-    var contentDiv = noteDiv.querySelector('.task-note-content');
-    if (!contentDiv) return;
-    
-    // Store original content
-    var originalContent = contentDiv.innerHTML;
-    
-    // Create edit form
-    var editForm = document.createElement('form');
-    editForm.method = 'post';
-    editForm.style.margin = '0';
-    
-    var editTextarea = document.createElement('textarea');
-    editTextarea.name = 'note_content';
-    editTextarea.value = noteContent;
-    editTextarea.rows = '3';
-    editTextarea.style.width = '100%';
-    editTextarea.style.marginBottom = '10px';
-    editTextarea.required = true;
-    
-    var actionInput = document.createElement('input');
-    actionInput.type = 'hidden';
-    actionInput.name = 'action';
-    actionInput.value = 'edit_task_note';
-    
-    var noteIdInput = document.createElement('input');
-    noteIdInput.type = 'hidden';
-    noteIdInput.name = 'note_id';
-    noteIdInput.value = noteId;
-    
-    var nonceInput = document.createElement('input');
-    nonceInput.type = 'hidden';
-    nonceInput.name = 'nonce';
-    nonceInput.value = '<?php echo wp_create_nonce("task_note_nonce"); ?>';
-    
-    var buttonGroup = document.createElement('div');
-    buttonGroup.style.display = 'flex';
-    buttonGroup.style.gap = '8px';
-    
-    var saveButton = document.createElement('button');
-    saveButton.type = 'submit';
-    saveButton.className = 'ab-btn ab-btn-primary ab-btn-xs';
-    saveButton.innerHTML = '<i class="fas fa-save"></i> Kaydet';
-    
-    var cancelButton = document.createElement('button');
-    cancelButton.type = 'button';
-    cancelButton.className = 'ab-btn ab-btn-secondary ab-btn-xs';
-    cancelButton.innerHTML = '<i class="fas fa-times"></i> İptal';
-    cancelButton.onclick = function() {
-        contentDiv.innerHTML = originalContent;
-    };
-    
-    buttonGroup.appendChild(saveButton);
-    buttonGroup.appendChild(cancelButton);
-    
-    editForm.appendChild(editTextarea);
-    editForm.appendChild(actionInput);
-    editForm.appendChild(noteIdInput);
-    editForm.appendChild(nonceInput);
-    editForm.appendChild(buttonGroup);
-    
-    // Replace content with edit form
-    contentDiv.innerHTML = '';
-    contentDiv.appendChild(editForm);
-    
-    // Focus on textarea
-    editTextarea.focus();
 }
 
 function deleteTaskNote(noteId) {
