@@ -1617,17 +1617,19 @@ if ($just_logged_in) {
         <div class="version-modal-header">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
                 <div></div>
-                <div style="background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; font-size: 14px; font-weight: 500;">
-                    v<?php echo esc_html($announcement_version); ?>
-                </div>
                 <span class="version-modal-close" onclick="closeVersionModal()">&times;</span>
             </div>
             <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 20px;">
-                <div style="background: rgba(255,255,255,0.2); padding: 20px; border-radius: 50%; margin-right: 20px;">
-                    <i class="fas fa-rocket" style="font-size: 40px;"></i>
+                <div style="background: rgba(255,255,255,0.2); padding: 15px; border-radius: 50%; margin-right: 20px;">
+                    <i class="fas fa-rocket" style="font-size: 28px;"></i>
                 </div>
-                <div>
-                    <h2 style="margin: 0; font-size: 24px; font-weight: 600;"><?php echo esc_html($announcement_title); ?></h2>
+                <div style="display: flex; flex-direction: column; align-items: flex-start;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <h2 style="margin: 0; font-size: 24px; font-weight: 600;"><?php echo esc_html($announcement_title); ?></h2>
+                        <div style="background: rgba(255,255,255,0.2); padding: 6px 12px; border-radius: 15px; font-size: 12px; font-weight: 500;">
+                            v<?php echo esc_html($announcement_version); ?>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1720,8 +1722,57 @@ if ($just_logged_in) {
 
 .version-feature h3 {
     margin: 0 0 10px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #4a5568;
+}
+
+.version-feature h4 {
+    margin: 0 0 8px 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a5568;
+}
+
+.version-modal-body h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #4a5568;
+    margin: 0 0 10px 0;
+}
+
+.version-modal-body h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #4a5568;
+    margin: 0 0 8px 0;
+}
+
+.version-modal-body p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #4a5568;
+    margin-bottom: 12px;
+}
+
+.version-modal-body ul li {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #4a5568;
+    margin-bottom: 6px;
+}
+
+.version-feature h3 {
+    margin: 0 0 10px 0;
     color: #2d3748;
-    font-size: 18px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.version-feature h4 {
+    margin: 0 0 8px 0;
+    color: #2d3748;
+    font-size: 14px;
     font-weight: 600;
 }
 
@@ -1729,6 +1780,35 @@ if ($just_logged_in) {
     margin: 0;
     color: #4a5568;
     line-height: 1.6;
+    font-size: 14px;
+}
+
+.version-modal-body h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #2d3748;
+    margin: 0 0 10px 0;
+}
+
+.version-modal-body h4 {
+    font-size: 14px;
+    font-weight: 600;
+    color: #2d3748;
+    margin: 0 0 8px 0;
+}
+
+.version-modal-body p {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #4a5568;
+    margin-bottom: 12px;
+}
+
+.version-modal-body ul li {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #4a5568;
+    margin-bottom: 6px;
 }
 
 .version-modal-footer {
@@ -1778,28 +1858,46 @@ if ($just_logged_in) {
 function showVersionNotification() {
     <?php if ($show_announcements && !empty($announcement_content) && $just_logged_in): ?>
     const currentVersion = '<?php echo esc_js($announcement_version); ?>';
-    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const lastShownKey = 'insurance_crm_last_shown_date';
+    const lastVersionKey = 'insurance_crm_last_version';
+    
+    const lastShownDate = localStorage.getItem(lastShownKey);
+    const lastVersion = localStorage.getItem(lastVersionKey);
     
     console.log('Version check - Current:', currentVersion);
-    console.log('Version check - ViewedKey:', viewedKey);
-    console.log('Version check - Previously viewed:', localStorage.getItem(viewedKey));
+    console.log('Version check - Today:', today);
+    console.log('Version check - Last shown date:', lastShownDate);
+    console.log('Version check - Last version:', lastVersion);
     
-    // Check if this version notification has been viewed
+    // Determine if we should show the popup
+    let shouldShow = false;
+    
     <?php if (isset($announcements['show_to_all']) && $announcements['show_to_all']): ?>
-    // Show to all users after login - don't check localStorage  
-    console.log('Showing popup to all users');
-    const modal = document.getElementById('versionNotificationModal');
-    if (modal) {
-        modal.style.display = 'block';
-        // Add a slight delay for smooth animation
-        setTimeout(() => {
-            modal.style.opacity = '1';
-        }, 50);
-    }
+    // Show to all users after login - always show when enabled
+    console.log('Showing popup to all users (show_to_all enabled)');
+    shouldShow = true;
     <?php else: ?>
-    // Only show if not viewed before and user just logged in
-    if (!localStorage.getItem(viewedKey)) {
-        console.log('Showing popup for new version');
+    // Show only once per day on first login, and again if version updated
+    if (!lastShownDate || lastShownDate !== today) {
+        // First login today
+        if (!lastVersion || lastVersion !== currentVersion) {
+            // Version changed or first time
+            console.log('Showing popup - first login today with new/no version');
+            shouldShow = true;
+        } else {
+            // Same version, don't show
+            console.log('Same version as yesterday, not showing popup');
+            shouldShow = false;
+        }
+    } else {
+        // Already shown today
+        console.log('Already shown today, not showing popup');
+        shouldShow = false;
+    }
+    <?php endif; ?>
+    
+    if (shouldShow) {
         const modal = document.getElementById('versionNotificationModal');
         if (modal) {
             modal.style.display = 'block';
@@ -1808,22 +1906,22 @@ function showVersionNotification() {
                 modal.style.opacity = '1';
             }, 50);
         }
-    } else {
-        console.log('Version already viewed, not showing popup');
     }
-    <?php endif; ?>
     <?php endif; ?>
 }
 
 function closeVersionModal() {
     <?php if ($show_announcements && !empty($announcement_content)): ?>
     const currentVersion = '<?php echo esc_js($announcement_version); ?>';
-    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const lastShownKey = 'insurance_crm_last_shown_date';
+    const lastVersionKey = 'insurance_crm_last_version';
     
-    console.log('Closing modal and marking version as viewed:', viewedKey);
+    console.log('Closing modal and marking as shown today:', today);
     
-    // Mark this version as viewed
-    localStorage.setItem(viewedKey, 'true');
+    // Mark as shown today and save current version
+    localStorage.setItem(lastShownKey, today);
+    localStorage.setItem(lastVersionKey, currentVersion);
     
     // Smooth hide animation
     const modal = document.getElementById('versionNotificationModal');
@@ -1838,13 +1936,14 @@ function closeVersionModal() {
 
 function showVersionAgain() {
     <?php if ($show_announcements && !empty($announcement_content)): ?>
-    const currentVersion = '<?php echo esc_js($announcement_version); ?>';
-    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    const lastShownKey = 'insurance_crm_last_shown_date';
+    const lastVersionKey = 'insurance_crm_last_version';
     
-    console.log('User clicked Show Again, removing version from viewed list:', viewedKey);
+    console.log('User clicked Show Again, clearing shown date so it shows next login');
     
-    // Remove this version from viewed list so it will show again next login
-    localStorage.removeItem(viewedKey);
+    // Remove last shown date so it will show again next login
+    localStorage.removeItem(lastShownKey);
+    localStorage.removeItem(lastVersionKey);
     
     // Close the modal
     const modal = document.getElementById('versionNotificationModal');
