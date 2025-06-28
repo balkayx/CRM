@@ -1595,7 +1595,11 @@ $announcements = isset($announcement_settings['update_announcements']) ? $announ
 $show_announcements = isset($announcements['enabled']) && $announcements['enabled'];
 $announcement_title = isset($announcements['title']) ? $announcements['title'] : 'Sistem Güncellemeleri';
 $announcement_content = isset($announcements['content']) ? $announcements['content'] : '';
-$announcement_version = isset($announcements['version']) ? $announcements['version'] : '1.9.4';
+
+// Get plugin version from the main plugin file
+$plugin_data = get_file_data(INSURANCE_CRM_PATH . 'insurance-crm.php', array('Version' => 'Version'));
+$current_plugin_version = $plugin_data['Version'];
+$announcement_version = isset($announcements['version']) ? $announcements['version'] : $current_plugin_version;
 
 // Check if user just logged in
 $current_user_id = get_current_user_id();
@@ -1631,6 +1635,9 @@ if ($just_logged_in) {
             <?php echo wp_kses_post($announcement_content); ?>
         </div>
         <div class="version-modal-footer">
+            <button onclick="showVersionAgain()" class="version-modal-btn-secondary">
+                <i class="fas fa-redo"></i> Tekrar Göster
+            </button>
             <button onclick="closeVersionModal()" class="version-modal-btn">
                 <i class="fas fa-check"></i> Anladım, Devam Et
             </button>
@@ -1727,6 +1734,9 @@ if ($just_logged_in) {
 .version-modal-footer {
     padding: 20px 30px 30px;
     text-align: center;
+    display: flex;
+    gap: 15px;
+    justify-content: center;
 }
 
 .version-modal-btn {
@@ -1744,6 +1754,23 @@ if ($just_logged_in) {
 .version-modal-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+}
+
+.version-modal-btn-secondary {
+    background: #e2e8f0;
+    color: #4a5568;
+    border: none;
+    padding: 12px 30px;
+    border-radius: 25px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.version-modal-btn-secondary:hover {
+    background: #cbd5e0;
+    transform: translateY(-2px);
 }
 </style>
 
@@ -1799,6 +1826,27 @@ function closeVersionModal() {
     localStorage.setItem(viewedKey, 'true');
     
     // Smooth hide animation
+    const modal = document.getElementById('versionNotificationModal');
+    if (modal) {
+        modal.style.opacity = '0';
+        setTimeout(() => {
+            modal.style.display = 'none';
+        }, 300);
+    }
+    <?php endif; ?>
+}
+
+function showVersionAgain() {
+    <?php if ($show_announcements && !empty($announcement_content)): ?>
+    const currentVersion = '<?php echo esc_js($announcement_version); ?>';
+    const viewedKey = 'insurance_crm_viewed_version_' + currentVersion;
+    
+    console.log('User clicked Show Again, removing version from viewed list:', viewedKey);
+    
+    // Remove this version from viewed list so it will show again next login
+    localStorage.removeItem(viewedKey);
+    
+    // Close the modal
     const modal = document.getElementById('versionNotificationModal');
     if (modal) {
         modal.style.opacity = '0';

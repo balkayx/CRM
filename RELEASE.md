@@ -1,6 +1,51 @@
 # Sürüm Notları
 
-## Versiyon 1.9.4 (29.06.2025)
+## Versiyon 1.9.5 (29.06.2025)
+
+### 🔐 Güvenlik ve Erişim Kontrolü
+
+- **Silinmiş Poliçeler URL Koruması:** Artık `?show_deleted=1` parametreli URL'ye direkt erişim yapılamaz
+  - Yetki kontrolü: Sadece `can_view_deleted_policies()` yetkisi olan kullanıcılar erişebilir
+  - Yetkisiz kullanıcılar otomatik olarak aktif poliçeler sayfasına yönlendirilir
+  - Patron ve Müdür: Tüm kullanıcıların sildiği poliçeleri görebilir
+  - Diğer roller: Sadece kendi sildikleri poliçeleri görebilir
+
+### 🎯 Kullanıcı Deneyimi İyileştirmeleri
+
+- **Gelişmiş Versiyon Bildirim Sistemi:**
+  - Artık plugin versiyonu otomatik olarak tespit edilir
+  - Her versiyon artışında kullanıcılar login sonrası bilgilendirilir
+  - **"Tekrar Göster" Butonu:** Kullanıcılar bildirimi kapatıp tekrar görmek isteyebilir
+  - localStorage ile akıllı takip sistemi iyileştirildi
+
+- **Metin Güncellemeleri:**
+  - Silinmiş poliçe geri getirme mesajı güncellendi: "yetkilendirilmiş kullanıcılar" ifadesi kullanıldı
+  - Kullanıcı dostu yetki mesajları eklendi
+
+### 🔧 Teknik İyileştirmeler
+
+- **Silinmiş Poliçe Sorgularında İyileştirme:**
+  - Patron/Müdür: Tüm silinmiş poliçeleri görüntüleyebilir
+  - Diğer roller: Sadece kendi silinmiş poliçelerini görüntüleyebilir
+  - Performans optimizasyonu yapıldı
+
+- **Versiyon Yönetimi:**
+  - Plugin versiyonu: 1.9.4 → 1.9.5
+  - Dinamik versiyon okuma sistemi eklendi
+  - Versiyon bildirimi varsayılan değeri güncel versiyon ile senkronize
+
+### 📊 Değişiklik Özeti
+
+| Özellik | Durum | Detay |
+|---------|-------|-------|
+| URL Erişim Kontrolü | ✅ Eklendi | Silinmiş poliçeler için yetki zorunluluğu |
+| Versiyon Popup | ✅ İyileştirildi | Tekrar göster butonu + akıllı takip |
+| Silinmiş Poliçe Görüntüleme | ✅ Optimize Edildi | Rol bazlı erişim kontrolü |
+| Metin Güncellemeleri | ✅ Tamamlandı | Kullanıcı dostu mesajlar |
+
+---
+
+## Versiyon 1.9.4 (Önceki Sürüm)
 
 ### 🎯 Kritik Düzeltmeler
 

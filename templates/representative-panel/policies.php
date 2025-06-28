@@ -180,7 +180,22 @@ if (!class_exists('ModernPolicyManager')) {
             $this->user_rep_id = $this->getCurrentUserRepId();
             $this->user_role_level = $this->getUserRoleLevel();
             $this->is_team_view = (isset($_GET['view_type']) && $_GET['view_type'] === 'team');
-            $this->show_deleted = (isset($_GET['show_deleted']) && $_GET['show_deleted'] === '1');
+            
+            // Access control for deleted policies view
+            $requested_show_deleted = (isset($_GET['show_deleted']) && $_GET['show_deleted'] === '1');
+            if ($requested_show_deleted) {
+                // Check if user has permission to view deleted policies
+                if (function_exists('can_view_deleted_policies') && can_view_deleted_policies()) {
+                    $this->show_deleted = true;
+                } else {
+                    // Redirect back to active policies if no permission
+                    $redirect_url = remove_query_arg('show_deleted', $_SERVER['REQUEST_URI']);
+                    wp_safe_redirect($redirect_url);
+                    exit;
+                }
+            } else {
+                $this->show_deleted = false;
+            }
 
             $this->initializeDatabase();
             $this->performAutoPassivation();
@@ -581,9 +596,17 @@ if (!class_exists('ModernPolicyManager')) {
             $where_conditions = ['1=1'];
             $params = [];
 
-            // NEW: Handle deleted policies
-            if ($this->isShowDeletedMode() && $this->user_role_level <= 2) {
-                $where_conditions[] = 'p.is_deleted = 1';
+            // NEW: Handle deleted policies with proper permission check
+            if ($this->isShowDeletedMode()) {
+                // Patron and Manager can see all deleted policies
+                if ($this->user_role_level <= 2) {
+                    $where_conditions[] = 'p.is_deleted = 1';
+                } else {
+                    // Other users can only see their own deleted policies if they have permission
+                    $where_conditions[] = 'p.is_deleted = 1';
+                    $where_conditions[] = 'p.representative_id = %d';
+                    $params[] = $this->user_rep_id;
+                }
             } else {
                 $where_conditions[] = 'p.is_deleted = 0';
             }
@@ -2291,7 +2314,7 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
             </div>
             <div class="restore-info">
                 <i class="fas fa-info-circle"></i>
-                <p>Silinmiş poliçeleri yalnızca Patron veya Müdür seviyesindeki kullanıcılar geri getirebilir.</p>
+                <p>Silinmiş poliçeleri yalnızca yetkilendirilmiş kullanıcılar geri getirebilir.</p>
             </div>
         </div>
         <div class="modal-footer">
