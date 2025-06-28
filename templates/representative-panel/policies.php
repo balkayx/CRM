@@ -1434,12 +1434,12 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
                     <?php endif; ?>
                 </div>
 
-                <?php if ($policy_manager->getUserRoleLevel() <= 2 && !$policy_manager->isShowDeletedMode()): ?>
+                <?php if (function_exists('can_view_deleted_policies') && can_view_deleted_policies() && !$policy_manager->isShowDeletedMode()): ?>
                 <a href="<?php echo esc_url($policy_manager->getShowDeletedUrl()); ?>" class="btn btn-warning">
                     <i class="fas fa-trash-alt"></i>
                     <span>Silinen Poliçeler</span>
                 </a>
-                <?php elseif ($policy_manager->getUserRoleLevel() <= 2 && $policy_manager->isShowDeletedMode()): ?>
+                <?php elseif (function_exists('can_view_deleted_policies') && can_view_deleted_policies() && $policy_manager->isShowDeletedMode()): ?>
                 <a href="<?php echo esc_url($policy_manager->getShowActiveUrl()); ?>" class="btn btn-info">
                     <i class="fas fa-check-circle"></i>
                     <span>Aktif Poliçeler</span>
@@ -1910,7 +1910,7 @@ $show_list = !in_array($current_action, ['view', 'edit', 'new', 'renew', 'cancel
                 </div>
             </div>
             
-            <?php if ($policy_manager->getUserRoleLevel() <= 2): ?>
+            <?php if (function_exists('can_view_deleted_policies') && can_view_deleted_policies()): ?>
             <div class="stat-card dark">
                 <div class="stat-icon">
                     <i class="fas fa-trash-alt"></i>

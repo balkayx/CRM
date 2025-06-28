@@ -56,7 +56,6 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
     $policy_delete = isset($_POST['policy_delete']) ? 1 : 0;
     $task_edit = isset($_POST['task_edit']) ? 1 : 0;
     $export_data = isset($_POST['export_data']) ? 1 : 0;
-    $bulk_operations = isset($_POST['bulk_operations']) ? 1 : 0;
     $can_change_customer_representative = isset($_POST['can_change_customer_representative']) ? 1 : 0;
     $can_change_policy_representative = isset($_POST['can_change_policy_representative']) ? 1 : 0;
     $can_change_task_representative = isset($_POST['can_change_task_representative']) ? 1 : 0;
@@ -159,7 +158,6 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
                     'policy_delete' => $policy_delete,
                     'task_edit' => $task_edit,
                     'export_data' => $export_data,
-                    'bulk_operations' => $bulk_operations,
                     'can_change_customer_representative' => $can_change_customer_representative,
                     'can_change_policy_representative' => $can_change_policy_representative,
                     'can_change_task_representative' => $can_change_task_representative,
@@ -502,17 +500,6 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
                                     </label>
                                 </div>
                                 
-                                <div class="modern-permissions-row">
-                                    <label class="modern-checkbox-container">
-                                        <input type="checkbox" name="bulk_operations" value="1">
-                                        <span class="modern-checkmark"></span>
-                                        <div class="label-text">
-                                            <span class="label-title">Toplu İşlemler</span>
-                                            <span class="label-desc">Çoklu seçim ile toplu işlem yapabilir</span>
-                                        </div>
-                                    </label>
-                                </div>
-
                                 <div class="modern-permissions-row">
                                     <label class="modern-checkbox-container">
                                         <input type="checkbox" name="can_change_customer_representative" value="1">

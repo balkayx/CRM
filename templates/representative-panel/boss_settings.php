@@ -121,23 +121,6 @@ if (!function_exists('can_export_data')) {
     }
 }
 
-if (!function_exists('can_bulk_operations')) {
-    function can_bulk_operations($user_id = null) {
-        // Check if bulk_operations column exists, fallback to customer_edit
-        global $wpdb;
-        $user_id = $user_id ?: get_current_user_id();
-        
-        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}insurance_crm_representatives LIKE 'bulk_operations'");
-        
-        if (!empty($columns)) {
-            return check_user_permission('bulk_operations', $user_id);
-        } else {
-            // Fallback to customer_edit permission
-            return check_user_permission('customer_edit', $user_id);
-        }
-    }
-}
-
 // Yetki kontrolü - patron ve müdür ayarlara erişebilir
 if (!has_full_admin_access($current_user->ID)) {
     wp_die('Bu sayfaya erişim yetkiniz bulunmuyor.');

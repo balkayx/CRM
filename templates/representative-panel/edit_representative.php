@@ -64,7 +64,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_representative_su
     $policy_delete = isset($_POST['policy_delete']) ? 1 : 0;
     $task_edit = isset($_POST['task_edit']) ? 1 : 0;
     $export_data = isset($_POST['export_data']) ? 1 : 0;
-    $bulk_operations = isset($_POST['bulk_operations']) ? 1 : 0;
     $can_change_customer_representative = isset($_POST['can_change_customer_representative']) ? 1 : 0;
     $can_change_policy_representative = isset($_POST['can_change_policy_representative']) ? 1 : 0;
     $can_change_task_representative = isset($_POST['can_change_task_representative']) ? 1 : 0;
@@ -179,7 +178,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['edit_representative_su
                     'policy_delete' => $policy_delete,
                     'task_edit' => $task_edit,
                     'export_data' => $export_data,
-                    'bulk_operations' => $bulk_operations,
                     'can_change_customer_representative' => $can_change_customer_representative,
                     'can_change_policy_representative' => $can_change_policy_representative,
                     'can_change_task_representative' => $can_change_task_representative,
@@ -600,17 +598,6 @@ foreach ($teams as $team) {
                                 </label>
                             </div>
                             
-                            <div class="modern-permissions-row">
-                                <label class="modern-checkbox-container">
-                                    <input type="checkbox" name="bulk_operations" value="1" <?php checked(isset($representative->bulk_operations) ? $representative->bulk_operations : 0, 1); ?>>
-                                    <span class="modern-checkmark"></span>
-                                    <div class="label-text">
-                                        <span class="label-title"><i class="fas fa-layer-group"></i> Toplu İşlemler</span>
-                                        <span class="label-desc">Çoklu seçim ile toplu işlem yapabilir</span>
-                                    </div>
-                                </label>
-                            </div>
-
                             <div class="modern-permissions-row">
                                 <label class="modern-checkbox-container">
                                     <input type="checkbox" name="can_change_customer_representative" value="1" <?php checked(isset($representative->can_change_customer_representative) ? $representative->can_change_customer_representative : 0, 1); ?>>
