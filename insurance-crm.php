@@ -3140,8 +3140,8 @@ function generate_simple_pdf_content($title, $data, $type) {
     // Create a comprehensive PDF structure with landscape orientation and multi-page support
     $pdf_content = "%PDF-1.4\n";
     
-    // Calculate total pages needed
-    $items_per_page = 35; // Optimized items per page for better readability
+    // Calculate total pages needed with optimized items per page
+    $items_per_page = 40; // Increased items per page with better absolute positioning
     $total_pages = max(1, ceil(count($data) / $items_per_page));
     
     // Objects
@@ -3175,25 +3175,25 @@ function generate_simple_pdf_content($title, $data, $type) {
         $end_index = min($start_index + $items_per_page, count($data));
         $page_data = array_slice($data, $start_index, $end_index - $start_index);
         
-        // Content for this page with consistent header layout
+        // Content for this page with absolute positioning for consistency
         $content = "BT\n";
         
-        // Title with consistent positioning and size
+        // Title with absolute positioning and consistent size
         $content .= "/F2 16 Tf\n"; // Bold font for title, consistent size
-        $content .= "50 560 Td\n"; // Consistent title position
+        $content .= "1 0 0 1 50 560 Tm\n"; // Absolute positioning for title (x=50, y=560)
         $title_converted = convert_turkish_chars_for_pdf($title);
         $content .= "(" . addslashes($title_converted) . ") Tj\n";
         
-        // Report info with consistent formatting
+        // Report info with absolute positioning
         $content .= "/F1 10 Tf\n"; // Regular font
-        $content .= "0 -20 Td\n"; // Consistent spacing
+        $content .= "1 0 0 1 50 540 Tm\n"; // Absolute position (x=50, y=540)
         $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
-        $content .= "0 -12 Td\n";
+        $content .= "1 0 0 1 50 528 Tm\n"; // Absolute position (x=50, y=528)
         $content .= "(Toplam Kayit: " . count($data) . " | Sayfa: " . ($page_num + 1) . "/" . $total_pages . ") Tj\n";
-        $content .= "0 -25 Td\n"; // Consistent spacing before table
         
-        // Table headers with consistent design for both types
+        // Table headers with absolute positioning and consistent design
         $content .= "/F2 9 Tf\n"; // Bold smaller font for headers, consistent size
+        $content .= "1 0 0 1 50 503 Tm\n"; // Absolute position for headers (x=50, y=503)
         
         if ($type === 'customers') {
             $content .= "(ID    Ad Soyad                          TC/VKN             Telefon           Email                        Sirket/Meslek                Temsilci) Tj\n";
@@ -3201,13 +3201,14 @@ function generate_simple_pdf_content($title, $data, $type) {
             $content .= "(ID    Musteri                           Police No          Tur                Sirket                 Prim          Baslangic       Bitis           Temsilci) Tj\n";
         }
         
-        $content .= "0 -12 Td\n";
+        $content .= "1 0 0 1 50 491 Tm\n"; // Absolute position for separator line
         $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
         
-        // Add data rows with consistent formatting
+        // Add data rows with absolute positioning for consistency
+        $current_y = 477; // Starting Y position for data rows
         foreach ($page_data as $item) {
-            $content .= "0 -14 Td\n"; // Consistent row spacing
             $content .= "/F1 8 Tf\n"; // Consistent data font size
+            $content .= "1 0 0 1 50 $current_y Tm\n"; // Absolute position for each row
             
             if ($type === 'customers') {
                 // Customer data display with consistent formatting
@@ -3248,6 +3249,7 @@ function generate_simple_pdf_content($title, $data, $type) {
             }
             
             $content .= "(" . addslashes($line) . ") Tj\n";
+            $current_y -= 12; // Decrease Y position for next row (12 points spacing)
         }
         
         $content .= "ET\n";
