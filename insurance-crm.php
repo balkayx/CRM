@@ -2905,7 +2905,7 @@ function export_policies_data($format, $filters) {
 function export_customers_data($format, $filters) {
     global $wpdb;
     
-    // Get current user's representative data for permission filtering
+    // Get current user's representative data - match customers.php logic exactly
     $current_user_id = get_current_user_id();
     $current_user_rep_id = $wpdb->get_var($wpdb->prepare(
         "SELECT id FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
@@ -2917,7 +2917,7 @@ function export_customers_data($format, $filters) {
         $current_user_id
     ));
     
-    // Determine access level based on role
+    // Determine access level based on role - match customers.php exactly
     $access_level = 'temsilci'; // default
     switch ($current_user_role) {
         case '1':
@@ -2937,46 +2937,65 @@ function export_customers_data($format, $filters) {
             break;
     }
     
+    // Get team info for team leaders - match customers.php logic
+    $team_info = ['members' => []];
+    if ($access_level == 'ekip_lideri') {
+        $settings = get_option('insurance_crm_settings', array());
+        $teams = isset($settings['teams_settings']['teams']) ? $settings['teams_settings']['teams'] : array();
+        
+        foreach ($teams as $team) {
+            if (isset($team['leader']) && $team['leader'] == $current_user_rep_id) {
+                $team_info['members'] = isset($team['members']) ? array_map('intval', $team['members']) : array();
+                break;
+            }
+        }
+    }
+    
     // Load visibility function if not available
     if (!function_exists('build_policy_based_customer_visibility')) {
         require_once(plugin_dir_path(__FILE__) . 'includes/functions.php');
     }
     
-    // Get team members for team leaders
-    $team_members = [];
-    if ($access_level == 'ekip_lideri') {
-        $team_members = $wpdb->get_col($wpdb->prepare(
-            "SELECT id FROM {$wpdb->prefix}insurance_crm_representatives 
-             WHERE team_id = (SELECT team_id FROM {$wpdb->prefix}insurance_crm_representatives WHERE id = %d) 
-             AND status = 'active'",
-            $current_user_rep_id
-        ));
-    }
+    // Build base query exactly like customers.php
+    $customers_table = $wpdb->prefix . 'insurance_crm_customers';
+    $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
+    $users_table = $wpdb->users;
+    $policies_table = $wpdb->prefix . 'insurance_crm_policies';
     
-    // Get visibility configuration
+    $base_query = "FROM $customers_table c 
+                   LEFT JOIN $representatives_table r ON c.representative_id = r.id
+                   LEFT JOIN $users_table u ON r.user_id = u.ID
+                   LEFT JOIN $representatives_table fr ON c.ilk_kayit_eden = fr.id
+                   LEFT JOIN $users_table fu ON fr.user_id = fu.ID
+                   WHERE 1=1";
+    
+    // Apply visibility restrictions exactly like customers.php
+    $team_members = !empty($team_info['members']) ? $team_info['members'] : array();
     $visibility_config = build_policy_based_customer_visibility($access_level, $current_user_rep_id, $team_members, 'customers');
     
-    // Build the WHERE clause - include visibility filtering
-    $where_conditions = ["c.deleted_at IS NULL"];
-    
-    // Add visibility restrictions
     if (!empty($visibility_config['where_clause'])) {
-        $where_conditions[] = substr($visibility_config['where_clause'], 5); // Remove " AND " prefix
+        $base_query .= $visibility_config['where_clause'];
     }
     
-    $where_clause = "WHERE " . implode(" AND ", $where_conditions);
-    $join_clause = $visibility_config['join_clause'] ?? '';
+    if (!empty($visibility_config['join_clause'])) {
+        $base_query = str_replace("FROM $customers_table c", "FROM $customers_table c " . $visibility_config['join_clause'], $base_query);
+    }
     
+    // Build final query with all customer data
     $query = "
-        SELECT c.*, 
-               u.display_name as representative_name,
-               t.name as team_name
-        FROM {$wpdb->prefix}insurance_crm_customers c
-        LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON c.representative_id = r.id
-        LEFT JOIN {$wpdb->prefix}insurance_crm_teams t ON r.team_id = t.id
-        LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
-        $join_clause
-        $where_clause
+        SELECT c.*, CONCAT(c.first_name, ' ', c.last_name) AS customer_name, 
+               u.display_name as representative_name, 
+               fu.display_name as first_registrar_name,
+               CASE 
+                   WHEN c.representative_id != " . intval($current_user_rep_id) . " 
+                        AND EXISTS (
+                            SELECT 1 FROM $policies_table p 
+                            WHERE p.customer_id = c.id 
+                            AND p.representative_id = " . intval($current_user_rep_id) . "
+                        ) THEN 1
+                   ELSE 0
+               END as is_policy_customer
+        " . $base_query . " 
         ORDER BY c.created_at DESC
     ";
     
@@ -3122,7 +3141,7 @@ function generate_simple_pdf_content($title, $data, $type) {
     $pdf_content = "%PDF-1.4\n";
     
     // Calculate total pages needed
-    $items_per_page = 40; // Increased items per page with smaller fonts
+    $items_per_page = 35; // Optimized items per page for better readability
     $total_pages = max(1, ceil(count($data) / $items_per_page));
     
     // Objects
@@ -3141,7 +3160,7 @@ function generate_simple_pdf_content($title, $data, $type) {
     $objects[$current_obj] = "2 0 obj\n<<\n/Type /Pages\n/Kids [" . implode(" ", $page_kids) . "]\n/Count $total_pages\n>>\nendobj\n";
     $current_obj++;
     
-    // Generate each page
+    // Generate each page with consistent formatting
     $content_objects = [];
     for ($page_num = 0; $page_num < $total_pages; $page_num++) {
         $page_obj_id = $current_obj;
@@ -3156,42 +3175,42 @@ function generate_simple_pdf_content($title, $data, $type) {
         $end_index = min($start_index + $items_per_page, count($data));
         $page_data = array_slice($data, $start_index, $end_index - $start_index);
         
-        // Content for this page
+        // Content for this page with consistent header layout
         $content = "BT\n";
-        $content .= "/F2 14 Tf\n"; // Bold font for title (reduced from 16)
-        $content .= "50 550 Td\n"; // Adjusted for landscape
         
-        // Handle Turkish characters in title
+        // Title with consistent positioning and size
+        $content .= "/F2 16 Tf\n"; // Bold font for title, consistent size
+        $content .= "50 560 Td\n"; // Consistent title position
         $title_converted = convert_turkish_chars_for_pdf($title);
         $content .= "(" . addslashes($title_converted) . ") Tj\n";
         
-        $content .= "/F1 10 Tf\n"; // Regular font (reduced from 12)
-        $content .= "0 -18 Td\n";
+        // Report info with consistent formatting
+        $content .= "/F1 10 Tf\n"; // Regular font
+        $content .= "0 -20 Td\n"; // Consistent spacing
         $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
         $content .= "0 -12 Td\n";
         $content .= "(Toplam Kayit: " . count($data) . " | Sayfa: " . ($page_num + 1) . "/" . $total_pages . ") Tj\n";
-        $content .= "0 -25 Td\n";
+        $content .= "0 -25 Td\n"; // Consistent spacing before table
         
-        // Add table headers with wider layout for landscape and smaller font
+        // Table headers with consistent design for both types
+        $content .= "/F2 9 Tf\n"; // Bold smaller font for headers, consistent size
+        
         if ($type === 'customers') {
-            $content .= "/F2 9 Tf\n"; // Bold smaller font for headers
-            $content .= "(ID    Ad Soyad                          TC Kimlik          Telefon           Email                        Sirket/Meslek                Temsilci) Tj\n";
-            $content .= "0 -12 Td\n";
-            $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
+            $content .= "(ID    Ad Soyad                          TC/VKN             Telefon           Email                        Sirket/Meslek                Temsilci) Tj\n";
         } else {
-            $content .= "/F2 9 Tf\n"; // Bold smaller font for headers
-            $content .= "(ID    Musteri                       Police No          Tur                Sirket                 Prim          Baslangic       Bitis           Temsilci) Tj\n";
-            $content .= "0 -12 Td\n";
-            $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
+            $content .= "(ID    Musteri                           Police No          Tur                Sirket                 Prim          Baslangic       Bitis           Temsilci) Tj\n";
         }
         
-        // Add data rows for this page
+        $content .= "0 -12 Td\n";
+        $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
+        
+        // Add data rows with consistent formatting
         foreach ($page_data as $item) {
-            $content .= "0 -12 Td\n"; // Reduced spacing
-            $content .= "/F1 8 Tf\n"; // Smaller font for data rows
+            $content .= "0 -14 Td\n"; // Consistent row spacing
+            $content .= "/F1 8 Tf\n"; // Consistent data font size
             
             if ($type === 'customers') {
-                // Enhanced customer data display with Turkish character conversion
+                // Customer data display with consistent formatting
                 $first_name = convert_turkish_chars_for_pdf($item->first_name ?? '');
                 $last_name = convert_turkish_chars_for_pdf($item->last_name ?? '');
                 $company_name = convert_turkish_chars_for_pdf($item->company_name ?? '');
@@ -3208,16 +3227,16 @@ function generate_simple_pdf_content($title, $data, $type) {
                     substr($rep_name, 0, 18)
                 );
             } else {
-                // Enhanced policy data display with Turkish character conversion and better spacing
+                // Policy data display with consistent formatting
                 $first_name = convert_turkish_chars_for_pdf($item->first_name ?? '');
                 $last_name = convert_turkish_chars_for_pdf($item->last_name ?? '');
                 $policy_type = convert_turkish_chars_for_pdf($item->policy_type ?? '');
                 $insurance_company = convert_turkish_chars_for_pdf($item->insurance_company ?? '');
                 $rep_name = convert_turkish_chars_for_pdf($item->representative_name ?? '');
                 
-                $line = sprintf("%-4s %-29s %-18s %-18s %-22s %-13s %-15s %-15s %s",
+                $line = sprintf("%-4s %-33s %-18s %-18s %-22s %-13s %-15s %-15s %s",
                     substr($item->id ?? '', 0, 4),
-                    substr($first_name . ' ' . $last_name, 0, 29),
+                    substr($first_name . ' ' . $last_name, 0, 33),
                     substr($item->policy_number ?? '', 0, 18),
                     substr($policy_type, 0, 18),
                     substr($insurance_company, 0, 22),
