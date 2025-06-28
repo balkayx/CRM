@@ -2873,32 +2873,12 @@ function can_export_data($user_id = null) {
 function export_policies_data($format, $filters) {
     global $wpdb;
     
-    // Build the query with filters
+    // Export ALL authorized data - ignore filters to get complete dataset
     $where_conditions = ["p.deleted_at IS NULL"];
     $query_params = [];
     
-    // Apply filters (simplified version)
-    if (!empty($filters['policy_number'])) {
-        $where_conditions[] = "p.policy_number LIKE %s";
-        $query_params[] = '%' . sanitize_text_field($filters['policy_number']) . '%';
-    }
-    
-    if (!empty($filters['policy_type'])) {
-        $where_conditions[] = "p.policy_type = %s";
-        $query_params[] = sanitize_text_field($filters['policy_type']);
-    }
-    
-    if (!empty($filters['insurance_company'])) {
-        $where_conditions[] = "p.insurance_company = %s";
-        $query_params[] = sanitize_text_field($filters['insurance_company']);
-    }
-    
-    if (!empty($filters['status'])) {
-        $where_conditions[] = "p.status = %s";
-        $query_params[] = sanitize_text_field($filters['status']);
-    }
-    
-    $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
+    // Build the WHERE clause - only include non-deleted records
+    $where_clause = "WHERE " . implode(" AND ", $where_conditions);
     
     $query = "
         SELECT p.*, 
@@ -2913,11 +2893,7 @@ function export_policies_data($format, $filters) {
         ORDER BY p.created_at DESC
     ";
     
-    if (!empty($query_params)) {
-        $policies = $wpdb->get_results($wpdb->prepare($query, ...$query_params));
-    } else {
-        $policies = $wpdb->get_results($query);
-    }
+    $policies = $wpdb->get_results($query);
     
     if ($format === 'csv') {
         export_policies_csv($policies);
@@ -2929,47 +2905,11 @@ function export_policies_data($format, $filters) {
 function export_customers_data($format, $filters) {
     global $wpdb;
     
-    // Build the query with filters
+    // Export ALL authorized data - ignore filters to get complete dataset
     $where_conditions = ["c.deleted_at IS NULL"];
     $query_params = [];
     
-    // Apply customer name filter (sent as 'customer_name' parameter)
-    if (!empty($filters['customer_name'])) {
-        $search_term = '%' . sanitize_text_field($filters['customer_name']) . '%';
-        $where_conditions[] = "(c.first_name LIKE %s OR c.last_name LIKE %s OR CONCAT(c.first_name, ' ', c.last_name) LIKE %s)";
-        $query_params[] = $search_term;
-        $query_params[] = $search_term;
-        $query_params[] = $search_term;
-    }
-    
-    // Apply date range filters
-    if (!empty($filters['start_date'])) {
-        $where_conditions[] = "DATE(c.created_at) >= %s";
-        $query_params[] = sanitize_text_field($filters['start_date']);
-    }
-    
-    if (!empty($filters['end_date'])) {
-        $where_conditions[] = "DATE(c.created_at) <= %s";
-        $query_params[] = sanitize_text_field($filters['end_date']);
-    }
-    
-    // Apply TC/Tax number filters if provided
-    if (!empty($filters['tc_identity'])) {
-        $where_conditions[] = "c.tc_identity LIKE %s";
-        $query_params[] = '%' . sanitize_text_field($filters['tc_identity']) . '%';
-    }
-    
-    if (!empty($filters['tax_number'])) {
-        $where_conditions[] = "c.tax_number LIKE %s";
-        $query_params[] = '%' . sanitize_text_field($filters['tax_number']) . '%';
-    }
-    
-    if (!empty($filters['company_name'])) {
-        $where_conditions[] = "c.company_name LIKE %s";
-        $query_params[] = '%' . sanitize_text_field($filters['company_name']) . '%';
-    }
-    
-    // Build the WHERE clause - always include deleted_at IS NULL
+    // Build the WHERE clause - only include non-deleted records
     $where_clause = "WHERE " . implode(" AND ", $where_conditions);
     
     $query = "
@@ -2984,11 +2924,7 @@ function export_customers_data($format, $filters) {
         ORDER BY c.created_at DESC
     ";
     
-    if (!empty($query_params)) {
-        $customers = $wpdb->get_results($wpdb->prepare($query, ...$query_params));
-    } else {
-        $customers = $wpdb->get_results($query);
-    }
+    $customers = $wpdb->get_results($query);
     
     if ($format === 'csv') {
         export_customers_csv($customers);
@@ -3055,26 +2991,31 @@ function export_customers_csv($customers) {
     // Add BOM for UTF-8
     fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
     
-    // CSV Headers
+    // Enhanced CSV Headers with more comprehensive data
     $headers = [
-        'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Telefon', 'Email',
-        'Adres', 'Doğum Tarihi', 'Temsilci', 'Oluşturulma Tarihi'
+        'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Şirket Adı', 'Telefon', 'Email',
+        'Adres', 'Şehir', 'Doğum Tarihi', 'Meslek', 'Not', 'Temsilci', 'Ekip', 'Oluşturulma Tarihi'
     ];
     fputcsv($output, $headers);
     
-    // CSV Data
+    // CSV Data with comprehensive customer information
     foreach ($customers as $customer) {
         $row = [
-            $customer->id,
+            $customer->id ?: '',
             $customer->first_name ?: '',
             $customer->last_name ?: '',
             $customer->tc_identity ?: '',
             $customer->tax_number ?: '',
+            $customer->company_name ?: '',
             $customer->phone ?: '',
             $customer->email ?: '',
             $customer->address ?: '',
+            $customer->city ?: '',
             $customer->birth_date ? date('d.m.Y', strtotime($customer->birth_date)) : '',
+            $customer->occupation ?: '',
+            $customer->notes ?: '',
             $customer->representative_name ?: '',
+            $customer->team_name ?: '',
             $customer->created_at ? date('d.m.Y H:i', strtotime($customer->created_at)) : ''
         ];
         fputcsv($output, $row);
@@ -3112,7 +3053,7 @@ function export_customers_pdf($customers) {
 
 // Simple PDF generation function for fallback
 function generate_simple_pdf_content($title, $data, $type) {
-    // Create a more comprehensive PDF structure
+    // Create a more comprehensive PDF structure with landscape orientation
     $pdf_content = "%PDF-1.4\n";
     
     // Objects
@@ -3127,15 +3068,19 @@ function generate_simple_pdf_content($title, $data, $type) {
     $objects[$current_obj] = "2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n";
     $current_obj++;
     
-    // Page
-    $objects[$current_obj] = "3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 595 842]\n/Contents 4 0 R\n/Resources <<\n/Font <<\n/F1 5 0 R\n/F2 6 0 R\n>>\n>>\n>>\nendobj\n";
+    // Page - LANDSCAPE orientation (842 x 595 instead of 595 x 842)
+    $objects[$current_obj] = "3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 842 595]\n/Contents 4 0 R\n/Resources <<\n/Font <<\n/F1 5 0 R\n/F2 6 0 R\n>>\n>>\n>>\nendobj\n";
     $current_obj++;
     
-    // Content
+    // Content with proper UTF-8 encoding for Turkish characters
     $content = "BT\n";
     $content .= "/F2 16 Tf\n"; // Bold font for title
-    $content .= "50 800 Td\n";
-    $content .= "($title) Tj\n";
+    $content .= "50 550 Td\n"; // Adjusted for landscape
+    
+    // Handle Turkish characters in title by converting to proper encoding
+    $title_encoded = mb_convert_encoding($title, 'UTF-8', 'UTF-8');
+    $content .= "(" . addslashes($title_encoded) . ") Tj\n";
+    
     $content .= "/F1 12 Tf\n"; // Regular font
     $content .= "0 -20 Td\n";
     $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
@@ -3143,19 +3088,19 @@ function generate_simple_pdf_content($title, $data, $type) {
     $content .= "(Toplam Kayit: " . count($data) . ") Tj\n";
     $content .= "0 -30 Td\n";
     
-    // Add table headers
+    // Add table headers with wider layout for landscape
     if ($type === 'customers') {
-        $content .= "(ID    Ad Soyad                   TC Kimlik      Telefon        Email                     Temsilci) Tj\n";
+        $content .= "(ID    Ad Soyad                      TC Kimlik       Telefon         Email                      Sirket/Meslek              Temsilci) Tj\n";
         $content .= "0 -15 Td\n";
-        $content .= "(---------------------------------------------------------------------------------) Tj\n";
+        $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
     } else {
-        $content .= "(ID    Musteri                  Police No      Tur           Sirket         Prim) Tj\n";
+        $content .= "(ID    Musteri                     Police No        Tur              Sirket              Prim        Baslangic     Bitis         Temsilci) Tj\n";
         $content .= "0 -15 Td\n";
-        $content .= "(---------------------------------------------------------------------------------) Tj\n";
+        $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
     }
     
-    $y_position = 720;
-    $items_per_page = 35;
+    $y_position = 480; // Adjusted for landscape
+    $items_per_page = 25; // Reduced for better spacing in landscape
     $item_count = 0;
     
     foreach ($data as $item) {
@@ -3164,28 +3109,46 @@ function generate_simple_pdf_content($title, $data, $type) {
         $content .= "0 -15 Td\n";
         
         if ($type === 'customers') {
-            $line = sprintf("%-4s %-25s %-13s %-14s %-24s %s",
+            // Enhanced customer data display with proper Turkish character handling
+            $first_name = mb_convert_encoding($item->first_name ?? '', 'UTF-8', 'UTF-8');
+            $last_name = mb_convert_encoding($item->last_name ?? '', 'UTF-8', 'UTF-8');
+            $company_name = mb_convert_encoding($item->company_name ?? '', 'UTF-8', 'UTF-8');
+            $occupation = mb_convert_encoding($item->occupation ?? '', 'UTF-8', 'UTF-8');
+            $rep_name = mb_convert_encoding($item->representative_name ?? '', 'UTF-8', 'UTF-8');
+            
+            $line = sprintf("%-4s %-28s %-15s %-15s %-25s %-25s %s",
                 substr($item->id ?? '', 0, 4),
-                substr(($item->first_name ?? '') . ' ' . ($item->last_name ?? ''), 0, 25),
-                substr($item->tc_identity ?? $item->tax_number ?? '', 0, 13),
-                substr($item->phone ?? '', 0, 14),
-                substr($item->email ?? '', 0, 24),
-                substr($item->representative_name ?? '', 0, 15)
+                substr($first_name . ' ' . $last_name, 0, 28),
+                substr($item->tc_identity ?? $item->tax_number ?? '', 0, 15),
+                substr($item->phone ?? '', 0, 15),
+                substr($item->email ?? '', 0, 25),
+                substr($company_name ?: $occupation, 0, 25),
+                substr($rep_name, 0, 15)
             );
         } else {
-            $line = sprintf("%-4s %-20s %-13s %-12s %-13s %s",
+            // Enhanced policy data display with proper Turkish character handling
+            $first_name = mb_convert_encoding($item->first_name ?? '', 'UTF-8', 'UTF-8');
+            $last_name = mb_convert_encoding($item->last_name ?? '', 'UTF-8', 'UTF-8');
+            $policy_type = mb_convert_encoding($item->policy_type ?? '', 'UTF-8', 'UTF-8');
+            $insurance_company = mb_convert_encoding($item->insurance_company ?? '', 'UTF-8', 'UTF-8');
+            $rep_name = mb_convert_encoding($item->representative_name ?? '', 'UTF-8', 'UTF-8');
+            
+            $line = sprintf("%-4s %-23s %-16s %-16s %-19s %-11s %-13s %-13s %s",
                 substr($item->id ?? '', 0, 4),
-                substr(($item->first_name ?? '') . ' ' . ($item->last_name ?? ''), 0, 20),
-                substr($item->policy_number ?? '', 0, 13),
-                substr($item->policy_type ?? '', 0, 12),
-                substr($item->insurance_company ?? '', 0, 13),
-                substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 10)
+                substr($first_name . ' ' . $last_name, 0, 23),
+                substr($item->policy_number ?? '', 0, 16),
+                substr($policy_type, 0, 16),
+                substr($insurance_company, 0, 19),
+                substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 11),
+                substr($item->start_date ? date('d.m.Y', strtotime($item->start_date)) : '', 0, 13),
+                substr($item->end_date ? date('d.m.Y', strtotime($item->end_date)) : '', 0, 13),
+                substr($rep_name, 0, 15)
             );
         }
         
-        // Clean the line for PDF (remove special characters)
-        $line = preg_replace('/[^\x20-\x7E]/', '?', $line);
-        $content .= "(" . $line . ") Tj\n";
+        // Keep Turkish characters instead of replacing them
+        $line_encoded = mb_convert_encoding($line, 'UTF-8', 'UTF-8');
+        $content .= "(" . addslashes($line_encoded) . ") Tj\n";
         
         $item_count++;
         $y_position -= 15;
@@ -3193,7 +3156,9 @@ function generate_simple_pdf_content($title, $data, $type) {
     
     if (count($data) > $items_per_page) {
         $content .= "0 -20 Td\n";
-        $content .= "(... ve " . (count($data) - $items_per_page) . " kayit daha. Tam liste icin CSV formatini kullaniniz.) Tj\n";
+        $remaining_text = "... ve " . (count($data) - $items_per_page) . " kayit daha. Tam liste icin CSV formatini kullaniniz.";
+        $remaining_encoded = mb_convert_encoding($remaining_text, 'UTF-8', 'UTF-8');
+        $content .= "(" . addslashes($remaining_encoded) . ") Tj\n";
     }
     
     $content .= "ET\n";
@@ -3201,12 +3166,12 @@ function generate_simple_pdf_content($title, $data, $type) {
     $objects[$current_obj] = "4 0 obj\n<<\n/Length " . strlen($content) . "\n>>\nstream\n$content\nendstream\nendobj\n";
     $current_obj++;
     
-    // Regular font
-    $objects[$current_obj] = "5 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier\n>>\nendobj\n";
+    // Regular font with UTF-8 support
+    $objects[$current_obj] = "5 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier\n/Encoding /WinAnsiEncoding\n>>\nendobj\n";
     $current_obj++;
     
-    // Bold font
-    $objects[$current_obj] = "6 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier-Bold\n>>\nendobj\n";
+    // Bold font with UTF-8 support
+    $objects[$current_obj] = "6 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier-Bold\n/Encoding /WinAnsiEncoding\n>>\nendobj\n";
     
     // Combine all objects
     $pdf_content .= implode('', $objects);
