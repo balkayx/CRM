@@ -295,7 +295,7 @@ class Insurance_CRM_License_Manager {
             // Save license information
             update_option('insurance_crm_license_key', $license_key);
             update_option('insurance_crm_license_status', 'active');
-            update_option('insurance_crm_license_type', $response['license_type'] ?? 'monthly');
+            update_option('insurance_crm_license_type', $response['license_type'] ?? '');
             update_option('insurance_crm_license_package', $response['license_package'] ?? '');
             update_option('insurance_crm_license_type_description', $response['license_type_description'] ?? '');
             update_option('insurance_crm_license_expiry', $response['expires_on'] ?? '');
@@ -676,6 +676,117 @@ class Insurance_CRM_License_Manager {
     }
 
     /**
+     * Get module access restriction message
+     * 
+     * @param string $module Module name
+     * @return string Restriction message in Turkish
+     */
+    public function get_module_restriction_message($module = '') {
+        $module_names = array(
+            'dashboard' => 'Dashboard',
+            'customers' => 'Müşteriler',
+            'policies' => 'Poliçeler', 
+            'quotes' => 'Teklifler',
+            'tasks' => 'Görevler',
+            'reports' => 'Raporlar',
+            'data_transfer' => 'Veri Aktarımı'
+        );
+        
+        $module_name = isset($module_names[$module]) ? $module_names[$module] : $module;
+        
+        if (!empty($module)) {
+            return sprintf('Bu özellik (%s) için lisansınız bulunmamaktadır. Lütfen lisans sağlayıcınızla iletişime geçin.', $module_name);
+        } else {
+            return 'Bu özellik için lisansınız bulunmamaktadır. Lütfen lisans sağlayıcınızla iletişime geçin.';
+        }
+    }
+
+    /**
+     * Display module access restriction notice
+     * 
+     * @param string $module Module name
+     * @param bool $die Whether to stop execution (default: false)
+     */
+    public function show_module_restriction_notice($module = '', $die = false) {
+        $message = $this->get_module_restriction_message($module);
+        
+        echo '<div class="notice notice-error">';
+        echo '<p><strong>Erişim Kısıtlı:</strong> ' . esc_html($message) . '</p>';
+        echo '</div>';
+        
+        if ($die) {
+            wp_die($message, 'Erişim Kısıtlı', array('response' => 403));
+        }
+    }
+
+    /**
+     * Check module access and show restriction if needed
+     * 
+     * @param string $module Module name
+     * @param bool $die Whether to stop execution if restricted (default: true)
+     * @return bool True if access allowed, false if restricted
+     */
+    public function check_module_access($module, $die = true) {
+        if ($this->is_module_allowed($module)) {
+            return true;
+        }
+        
+        if ($die) {
+            $this->show_module_restriction_notice($module, true);
+        } else {
+            $this->show_module_restriction_notice($module, false);
+        }
+        
+        return false;
+    }
+
+    /**
+     * Get list of licensed modules
+     * 
+     * @return array Array of licensed module slugs
+     */
+    public function get_licensed_modules() {
+        return get_option('insurance_crm_license_modules', array());
+    }
+
+    /**
+     * Get list of all available modules with their display names
+     * 
+     * @return array Array of module slug => display name
+     */
+    public function get_all_modules() {
+        return array(
+            'dashboard' => 'Dashboard',
+            'customers' => 'Müşteriler',
+            'policies' => 'Poliçeler', 
+            'quotes' => 'Teklifler',
+            'tasks' => 'Görevler',
+            'reports' => 'Raporlar',
+            'data_transfer' => 'Veri Aktarımı'
+        );
+    }
+
+    /**
+     * Get module access status for all modules
+     * 
+     * @return array Array of module => access status
+     */
+    public function get_module_access_status() {
+        $all_modules = $this->get_all_modules();
+        $status = array();
+        
+        foreach ($all_modules as $slug => $name) {
+            $status[$slug] = array(
+                'name' => $name,
+                'allowed' => $this->is_module_allowed($slug),
+                'licensed' => in_array($slug, $this->get_licensed_modules())
+            );
+        }
+        
+        return $status;
+    }
+
+    /**
      * Get license information for display
      * 
      * @return array License information
@@ -843,5 +954,47 @@ class Insurance_CRM_License_Manager {
         }
         
         return $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0';
+    }
+
+    /**
+     * Get JavaScript function for client-side module checking
+     * 
+     * @return string JavaScript function
+     */
+    public function get_module_check_js() {
+        $licensed_modules = $this->get_licensed_modules();
+        $js_modules = json_encode($licensed_modules);
+        
+        return "
+        <script>
+        window.insuranceCRMLicensedModules = {$js_modules};
+        
+        function checkModuleAccess(module) {
+            return window.insuranceCRMLicensedModules.includes(module);
+        }
+        
+        function showModuleRestriction(module) {
+            const moduleNames = {
+                'dashboard': 'Dashboard',
+                'customers': 'Müşteriler',
+                'policies': 'Poliçeler',
+                'quotes': 'Teklifler',
+                'tasks': 'Görevler',
+                'reports': 'Raporlar',
+                'data_transfer': 'Veri Aktarımı'
+            };
+            
+            const moduleName = moduleNames[module] || module;
+            alert('Bu özellik (' + moduleName + ') için lisansınız bulunmamaktadır. Lütfen lisans sağlayıcınızla iletişime geçin.');
+            return false;
+        }
+    
+        function requireModuleAccess(module) {
+            if (!checkModuleAccess(module)) {
+                return showModuleRestriction(module);
+            }
+            return true;
+        }
+        </script>";
     }
 }

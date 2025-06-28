@@ -359,7 +359,8 @@ class Insurance_CRM_License_API {
             'status' => 'active',
             'user_limit' => 5,
             'expires_on' => date('Y-m-d', strtotime('+30 days')),
-            'license_type' => 'monthly',
+            'license_type' => 'trial',
+            'license_type_description' => 'Deneme Lisansı',
             'modules' => array('customers', 'policies', 'tasks', 'reports'),
             'message' => 'Demo lisans - test amaçlı'
         );

@@ -657,6 +657,78 @@ if ($license_status === 'active' && in_array($license_type, array('monthly', 'ye
     .tab-content[style*="display: none"] {
         display: none !important;
     }
+    
+    /* Modules Grid Styles */
+    .modules-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+        margin-top: 15px;
+    }
+    
+    .module-item {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 15px;
+        border-radius: 8px;
+        border: 2px solid;
+        transition: all 0.3s ease;
+    }
+    
+    .module-item.module-licensed {
+        background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+        border-color: #4caf50;
+        color: #2e7d32;
+    }
+    
+    .module-item.module-unlicensed {
+        background: linear-gradient(135deg, #ffebee, #fce4ec);
+        border-color: #f44336;
+        color: #c62828;
+    }
+    
+    .module-icon {
+        font-size: 24px;
+        min-width: 30px;
+        text-align: center;
+    }
+    
+    .module-details h4 {
+        margin: 0 0 5px 0;
+        font-size: 16px;
+        font-weight: 600;
+    }
+    
+    .module-status {
+        font-size: 12px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    
+    .module-warning {
+        background: #fff3e0;
+        border: 2px solid #ff9800;
+        border-radius: 8px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        color: #e65100;
+        margin-top: 15px;
+    }
+    
+    .module-warning i {
+        font-size: 24px;
+        color: #ff9800;
+    }
+    
+    .module-warning p {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.5;
+    }
 </style>
 
 <?php if ($form_result): ?>
@@ -844,6 +916,52 @@ if ($license_status === 'active' && in_array($license_type, array('monthly', 'ye
             </div>
             <?php endif; ?>
         </div>
+    </div>
+    
+    <!-- Licensed Modules Display -->
+    <div class="license-form-section">
+        <h3><i class="fas fa-puzzle-piece"></i> Lisanslı Modüller</h3>
+        
+        <?php
+        // Get licensed modules
+        $licensed_modules = $license_info['modules'];
+        $all_modules = array(
+            'dashboard' => 'Dashboard',
+            'customers' => 'Müşteriler',
+            'policies' => 'Poliçeler', 
+            'quotes' => 'Teklifler',
+            'tasks' => 'Görevler',
+            'reports' => 'Raporlar',
+            'data_transfer' => 'Veri Aktarımı'
+        );
+        ?>
+        
+        <div class="modules-grid">
+            <?php foreach ($all_modules as $module_slug => $module_name): ?>
+                <?php 
+                $is_licensed = !empty($licensed_modules) && in_array($module_slug, $licensed_modules);
+                $module_class = $is_licensed ? 'module-licensed' : 'module-unlicensed';
+                $icon_class = $is_licensed ? 'fa-check-circle' : 'fa-times-circle';
+                $status_text = $is_licensed ? 'Lisanslı' : 'Lisans Yok';
+                ?>
+                <div class="module-item <?php echo $module_class; ?>">
+                    <div class="module-icon">
+                        <i class="fas <?php echo $icon_class; ?>"></i>
+                    </div>
+                    <div class="module-details">
+                        <h4><?php echo esc_html($module_name); ?></h4>
+                        <span class="module-status"><?php echo $status_text; ?></span>
+                    </div>
+                </div>
+            <?php endforeach; ?>
+        </div>
+        
+        <?php if (empty($licensed_modules)): ?>
+            <div class="module-warning">
+                <i class="fas fa-exclamation-triangle"></i>
+                <p>Herhangi bir modül lisansı bulunamadı. Lütfen lisans anahtarınızı kontrol edin veya lisans sağlayıcınızla iletişime geçin.</p>
+            </div>
+        <?php endif; ?>
     </div>
     
     <?php if ($is_access_restricted): ?>
@@ -1065,3 +1183,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
+
+<?php
+// Add module access checking JavaScript
+if ($insurance_crm_license_manager) {
+    echo $insurance_crm_license_manager->get_module_check_js();
+}
+?>
