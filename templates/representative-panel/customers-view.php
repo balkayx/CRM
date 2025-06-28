@@ -834,8 +834,8 @@ function can_edit_customer_view($customer) {
     
     // Eğer genel erişim açıksa, müşteri düzenleme yapılamaz (sadece görüşme notu eklenebilir)
     if ($allow_customer_details_access) {
-        // Sadece Patron her zaman düzenleyebilir (yönetim yetkisi)
-        if ($rep_data->role == 1) return true;
+        // Patron ve Müdür her zaman düzenleyebilir (yönetim yetkisi)
+        if ($rep_data->role == 1 || $rep_data->role == 2) return true;
         
         // Diğer kullanıcılar düzenleyemez, sadece görüşme notu ekleyebilir
         return false;
@@ -847,7 +847,7 @@ function can_edit_customer_view($customer) {
         return true;
     }
     
-    if ($rep_data->role == 2 && $rep_data->customer_edit == 1) { // Müdür + düzenleme yetkisi var
+    if ($rep_data->role == 2) { // Müdür - şart bağımsız düzenleyebilir
         return true;
     }
     

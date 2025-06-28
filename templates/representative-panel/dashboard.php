@@ -1601,13 +1601,15 @@ $plugin_data = get_file_data(INSURANCE_CRM_PATH . 'insurance-crm.php', array('Ve
 $current_plugin_version = $plugin_data['Version'];
 $announcement_version = isset($announcements['version']) ? $announcements['version'] : $current_plugin_version;
 
-// Check if user just logged in
+// Check if user just logged in or if we should show based on daily logic
 $current_user_id = get_current_user_id();
 $just_logged_in = get_transient('insurance_crm_show_popup_' . $current_user_id);
 if ($just_logged_in) {
-    // Delete the transient so it doesn't show again
+    // Delete the transient so it doesn't show again this session
     delete_transient('insurance_crm_show_popup_' . $current_user_id);
 }
+
+// We'll determine whether to show in JavaScript based on localStorage for more reliable daily tracking
 ?>
 
 <?php if ($show_announcements && !empty($announcement_content)): ?>
@@ -1856,7 +1858,7 @@ if ($just_logged_in) {
 
 <script>
 function showVersionNotification() {
-    <?php if ($show_announcements && !empty($announcement_content) && $just_logged_in): ?>
+    <?php if ($show_announcements && !empty($announcement_content)): ?>
     const currentVersion = '<?php echo esc_js($announcement_version); ?>';
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
     const lastShownKey = 'insurance_crm_last_shown_date';
@@ -1869,6 +1871,7 @@ function showVersionNotification() {
     console.log('Version check - Today:', today);
     console.log('Version check - Last shown date:', lastShownDate);
     console.log('Version check - Last version:', lastVersion);
+    console.log('Version check - Just logged in:', <?php echo $just_logged_in ? 'true' : 'false'; ?>);
     
     // Determine if we should show the popup
     let shouldShow = false;
@@ -1880,19 +1883,16 @@ function showVersionNotification() {
     <?php else: ?>
     // Show only once per day on first login, and again if version updated
     if (!lastShownDate || lastShownDate !== today) {
-        // First login today
-        if (!lastVersion || lastVersion !== currentVersion) {
-            // Version changed or first time
-            console.log('Showing popup - first login today with new/no version');
-            shouldShow = true;
-        } else {
-            // Same version, don't show
-            console.log('Same version as yesterday, not showing popup');
-            shouldShow = false;
-        }
+        // First login today - always show
+        console.log('Showing popup - first login today');
+        shouldShow = true;
+    } else if (lastVersion && lastVersion !== currentVersion) {
+        // Version changed since last show
+        console.log('Showing popup - version changed since last show');
+        shouldShow = true;
     } else {
-        // Already shown today
-        console.log('Already shown today, not showing popup');
+        // Already shown today with same version
+        console.log('Not showing popup - already shown today with same version');
         shouldShow = false;
     }
     <?php endif; ?>
