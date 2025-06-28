@@ -23,6 +23,209 @@ $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
 $teams_table = $wpdb->prefix . 'insurance_crm_teams';
 $users_table = $wpdb->users;
 
+// Early export handling - Before any output
+if (isset($_POST['export']) && isset($_POST['export_nonce']) && wp_verify_nonce($_POST['export_nonce'], 'export_customers_data')) {
+    
+    // Check permissions first - define basic function if not already defined
+    if (!function_exists('can_export_data')) {
+        function can_export_data($user_id = null) {
+            global $wpdb;
+            $user_id = $user_id ?: get_current_user_id();
+            
+            $rep = $wpdb->get_row($wpdb->prepare(
+                "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+                $user_id
+            ));
+            
+            if (!$rep) {
+                return false;
+            }
+            
+            $role_id = intval($rep->role);
+            
+            // Patron (role 1) and Müdür (role 2) have all permissions including export
+            if ($role_id === 1 || $role_id === 2) {
+                return true;
+            }
+            
+            // For other roles, check individual export_data permission
+            $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+            
+            return $export_permission === 1;
+        }
+    }
+    
+    if (!can_export_data()) {
+        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
+    }
+    
+    $export_format = sanitize_text_field($_POST['export']);
+    $export_type = sanitize_text_field($_POST['export_type']);
+    
+    if ($export_type === 'customers' && in_array($export_format, ['csv', 'pdf'])) {
+        try {
+            // Get filters from POST data
+            $search = sanitize_text_field($_POST['search'] ?? '');
+            $filter_status = sanitize_text_field($_POST['filter_status'] ?? '');
+            $filter_category = sanitize_text_field($_POST['filter_category'] ?? '');
+            $filter_representative = (int) ($_POST['filter_representative'] ?? 0);
+            
+            // Build query manually for export
+            $where_conditions = [];
+            $query_params = [];
+            
+            // Base conditions
+            $where_conditions[] = "c.deleted_at IS NULL";
+            
+            // Apply filters
+            if (!empty($search)) {
+                $where_conditions[] = "(c.first_name LIKE %s OR c.last_name LIKE %s OR c.phone LIKE %s OR c.email LIKE %s OR c.tc_identity LIKE %s OR c.tax_number LIKE %s)";
+                $search_term = '%' . $search . '%';
+                $query_params = array_merge($query_params, [$search_term, $search_term, $search_term, $search_term, $search_term, $search_term]);
+            }
+            
+            if (!empty($filter_status)) {
+                $where_conditions[] = "c.status = %s";
+                $query_params[] = $filter_status;
+            }
+            
+            if (!empty($filter_category)) {
+                $where_conditions[] = "c.category = %s";
+                $query_params[] = $filter_category;
+            }
+            
+            if ($filter_representative > 0) {
+                $where_conditions[] = "c.representative_id = %d";
+                $query_params[] = $filter_representative;
+            }
+            
+            $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
+            
+            $query = "
+                SELECT c.*, CONCAT(c.first_name, ' ', c.last_name) AS customer_name, 
+                       u.display_name as representative_name, 
+                       fu.display_name as first_registrar_name
+                FROM {$wpdb->prefix}insurance_crm_customers c
+                LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON c.representative_id = r.id
+                LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
+                LEFT JOIN {$wpdb->users} fu ON c.first_registrar_id = fu.ID
+                $where_clause
+                ORDER BY c.created_at DESC
+            ";
+            
+            if (!empty($query_params)) {
+                $export_customers = $wpdb->get_results($wpdb->prepare($query, ...$query_params));
+            } else {
+                $export_customers = $wpdb->get_results($query);
+            }
+            
+            if ($export_format === 'csv') {
+                // Export to CSV
+                header('Content-Type: text/csv; charset=utf-8');
+                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.csv"');
+                
+                $output = fopen('php://output', 'w');
+                
+                // Add BOM for UTF-8
+                fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+                
+                // CSV Headers
+                $headers = [
+                    'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Telefon', 'E-posta', 
+                    'Adres', 'Şirket', 'Cinsiyet', 'Doğum Tarihi', 'Kategori', 'Durum',
+                    'Temsilci', 'İlk Kayıt Eden', 'Oluşturulma Tarihi'
+                ];
+                fputcsv($output, $headers);
+                
+                // CSV Data
+                foreach ($export_customers as $customer) {
+                    $row = [
+                        $customer->id ?? '',
+                        $customer->first_name ?? '',
+                        $customer->last_name ?? '',
+                        $customer->tc_identity ?? '',
+                        $customer->tax_number ?? '',
+                        $customer->phone ?? '',
+                        $customer->email ?? '',
+                        $customer->address ?? '',
+                        $customer->company_name ?? '',
+                        $customer->gender ?? '',
+                        $customer->birth_date ? date('d.m.Y', strtotime($customer->birth_date)) : '',
+                        $customer->category ?? '',
+                        $customer->status ?? '',
+                        $customer->representative_name ?? '',
+                        $customer->first_registrar_name ?? '',
+                        $customer->created_at ? date('d.m.Y H:i', strtotime($customer->created_at)) : ''
+                    ];
+                    fputcsv($output, $row);
+                }
+                
+                fclose($output);
+                exit;
+                
+            } elseif ($export_format === 'pdf') {
+                // Simple PDF export (HTML to PDF conversion)
+                header('Content-Type: text/html; charset=utf-8');
+                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.html"');
+                
+                // Create a simple HTML for PDF conversion
+                $html = '<!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Müşteri Listesi - ' . date('d.m.Y') . '</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; font-size: 12px; }
+                        table { border-collapse: collapse; width: 100%; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f2f2f2; font-weight: bold; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Müşteri Listesi</h2>
+                        <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
+                        <p>Toplam Kayıt: ' . count($export_customers) . '</p>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Ad Soyad</th>
+                                <th>TC/VKN</th>
+                                <th>Telefon</th>
+                                <th>E-posta</th>
+                                <th>Kategori</th>
+                                <th>Durum</th>
+                                <th>Temsilci</th>
+                            </tr>
+                        </thead>
+                        <tbody>';
+                
+                foreach ($export_customers as $customer) {
+                    $html .= '<tr>
+                        <td>' . esc_html(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? '')) . '</td>
+                        <td>' . esc_html($customer->tc_identity ?: $customer->tax_number ?: '') . '</td>
+                        <td>' . esc_html($customer->phone ?? '') . '</td>
+                        <td>' . esc_html($customer->email ?? '') . '</td>
+                        <td>' . esc_html($customer->category ?? '') . '</td>
+                        <td>' . esc_html($customer->status ?? '') . '</td>
+                        <td>' . esc_html($customer->representative_name ?? '') . '</td>
+                    </tr>';
+                }
+                
+                $html .= '</tbody></table></body></html>';
+                
+                // Output HTML for browser's print to PDF functionality
+                echo $html;
+                exit;
+            }
+        } catch (Exception $e) {
+            wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+        }
+    }
+}
+
 /**
  * BACKWARD COMPATIBILITY FUNCTIONS - Sadece tanımlı değilse oluştur
  */
@@ -639,132 +842,7 @@ for ($i = 5; $i >= 0; $i--) {
 // Toplam müşteri sayısını al (filtreli sayfa için)
 $total_items = $wpdb->get_var("SELECT COUNT(DISTINCT c.id) " . $base_query);
 
-// Handle export requests
-if (isset($_POST['export']) && isset($_POST['export_nonce']) && wp_verify_nonce($_POST['export_nonce'], 'export_customers_data')) {
-    if (!can_export_data()) {
-        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
-    }
-    
-    $export_format = sanitize_text_field($_POST['export']);
-    $export_type = sanitize_text_field($_POST['export_type']);
-    
-    if ($export_type === 'customers' && in_array($export_format, ['csv', 'pdf'])) {
-        try {
-            // Get all customers with current filters for export (no pagination)
-            $export_customers = $wpdb->get_results("
-                SELECT c.*, CONCAT(c.first_name, ' ', c.last_name) AS customer_name, 
-                       u.display_name as representative_name, 
-                       fu.display_name as first_registrar_name
-                " . $base_query . " 
-                ORDER BY $orderby $order
-            ");
-            
-            if ($export_format === 'csv') {
-                // Export to CSV
-                header('Content-Type: text/csv; charset=utf-8');
-                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.csv"');
-                
-                $output = fopen('php://output', 'w');
-                
-                // Add BOM for UTF-8
-                fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-                
-                // CSV Headers
-                $headers = [
-                    'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Telefon', 'E-posta', 
-                    'Adres', 'Şirket', 'Cinsiyet', 'Doğum Tarihi', 'Kategori', 'Durum',
-                    'Temsilci', 'İlk Kayıt Eden', 'Oluşturulma Tarihi'
-                ];
-                fputcsv($output, $headers);
-                
-                // CSV Data
-                foreach ($export_customers as $customer) {
-                    $row = [
-                        $customer->id,
-                        $customer->first_name,
-                        $customer->last_name,
-                        $customer->tc_identity ?: '',
-                        $customer->tax_number ?: '',
-                        $customer->phone ?: '',
-                        $customer->email ?: '',
-                        $customer->address ?: '',
-                        $customer->company_name ?: '',
-                        $customer->gender ?: '',
-                        $customer->birth_date ? date('d.m.Y', strtotime($customer->birth_date)) : '',
-                        $customer->category ?: '',
-                        $customer->status ?: '',
-                        $customer->representative_name ?: '',
-                        $customer->first_registrar_name ?: '',
-                        date('d.m.Y H:i', strtotime($customer->created_at))
-                    ];
-                    fputcsv($output, $row);
-                }
-                
-                fclose($output);
-                exit;
-                
-            } elseif ($export_format === 'pdf') {
-                // Simple PDF export (HTML to PDF conversion)
-                header('Content-Type: application/pdf');
-                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.pdf"');
-                
-                // Create a simple HTML for PDF conversion
-                $html = '<!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Müşteri Listesi - ' . date('d.m.Y') . '</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; font-size: 12px; }
-                        table { border-collapse: collapse; width: 100%; }
-                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                        th { background-color: #f2f2f2; font-weight: bold; }
-                        .header { text-align: center; margin-bottom: 20px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h2>Müşteri Listesi</h2>
-                        <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
-                        <p>Toplam Kayıt: ' . count($export_customers) . '</p>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Ad Soyad</th>
-                                <th>TC/VKN</th>
-                                <th>Telefon</th>
-                                <th>E-posta</th>
-                                <th>Kategori</th>
-                                <th>Durum</th>
-                                <th>Temsilci</th>
-                            </tr>
-                        </thead>
-                        <tbody>';
-                
-                foreach ($export_customers as $customer) {
-                    $html .= '<tr>
-                        <td>' . esc_html($customer->first_name . ' ' . $customer->last_name) . '</td>
-                        <td>' . esc_html($customer->tc_identity ?: $customer->tax_number ?: '') . '</td>
-                        <td>' . esc_html($customer->phone ?: '') . '</td>
-                        <td>' . esc_html($customer->email ?: '') . '</td>
-                        <td>' . esc_html($customer->category ?: '') . '</td>
-                        <td>' . esc_html($customer->status ?: '') . '</td>
-                        <td>' . esc_html($customer->representative_name ?: '') . '</td>
-                    </tr>';
-                }
-                
-                $html .= '</tbody></table></body></html>';
-                
-                // Use browser's print to PDF functionality
-                echo $html;
-                exit;
-            }
-        } catch (Exception $e) {
-            wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
-        }
-    }
-}
+
 
 // Sıralama
 $orderby = isset($_GET['orderby']) ? sanitize_text_field($_GET['orderby']) : 'c.created_at';
@@ -1010,13 +1088,11 @@ $debug_mode = false; // Geliştirici modu - aktifleştirirseniz SQL sorguların�
                 <?php if (can_export_data()): ?>
                 <!-- Export Buttons -->
                 <div class="export-buttons-group">
-                    <button type="button" class="btn btn-outline export-csv-btn" onclick="exportCustomersData('csv')">
+                    <button type="button" class="btn btn-outline export-csv-btn" onclick="exportCustomersData('csv')" title="CSV Dışa Aktar">
                         <i class="fas fa-file-csv"></i>
-                        <span>CSV Dışa Aktar</span>
                     </button>
-                    <button type="button" class="btn btn-outline export-pdf-btn" onclick="exportCustomersData('pdf')">
+                    <button type="button" class="btn btn-outline export-pdf-btn" onclick="exportCustomersData('pdf')" title="PDF Dışa Aktar">
                         <i class="fas fa-file-pdf"></i>
-                        <span>PDF Dışa Aktar</span>
                     </button>
                 </div>
                 <?php endif; ?>
