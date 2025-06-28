@@ -123,26 +123,13 @@ if (!function_exists('can_edit_policy')) {
         global $wpdb;
         $rep_permissions = get_rep_permissions();
         
-        if ($role_level === 1) return true; // Patron
-        if ($role_level === 5) { // Müşteri Temsilcisi
-            if (!$rep_permissions || $rep_permissions->policy_edit != 1) return false;
-            $policy_owner = $wpdb->get_var($wpdb->prepare(
-                "SELECT representative_id FROM {$wpdb->prefix}insurance_crm_policies WHERE id = %d", 
-                $policy_id
-            ));
-            return $policy_owner == $user_rep_id;
+        // Patron (role 1) ve Müdür (role 2) her zaman tam yetkiye sahip
+        if ($role_level === 1 || $role_level === 2) {
+            return true;
         }
-        if ($role_level === 4) { // Ekip Lideri
-            if (!$rep_permissions || $rep_permissions->policy_edit != 1) return false;
-            $team_members = get_team_members_ids(get_current_user_id());
-            $policy_owner = $wpdb->get_var($wpdb->prepare(
-                "SELECT representative_id FROM {$wpdb->prefix}insurance_crm_policies WHERE id = %d", 
-                $policy_id
-            ));
-            return in_array($policy_owner, $team_members);
-        }
-        if (($role_level === 2 || $role_level === 3) && $rep_permissions && $rep_permissions->policy_edit == 1) return true;
-        return false;
+        
+        // Diğer tüm roller için sadece kullanıcı bazlı yetki kontrolü
+        return $rep_permissions && isset($rep_permissions->policy_edit) && $rep_permissions->policy_edit == 1;
     }
 }
 
@@ -151,19 +138,13 @@ if (!function_exists('can_delete_policy')) {
         global $wpdb;
         $rep_permissions = get_rep_permissions();
         
-        if ($role_level === 1) return true; // Patron
-        if ($role_level === 5) return false; // Müşteri temsilcileri silemez
-        if ($role_level === 4) { // Ekip Lideri
-            if (!$rep_permissions || $rep_permissions->policy_delete != 1) return false;
-            $team_members = get_team_members_ids(get_current_user_id());
-            $policy_owner = $wpdb->get_var($wpdb->prepare(
-                "SELECT representative_id FROM {$wpdb->prefix}insurance_crm_policies WHERE id = %d", 
-                $policy_id
-            ));
-            return in_array($policy_owner, $team_members);
+        // Patron (role 1) ve Müdür (role 2) her zaman tam yetkiye sahip
+        if ($role_level === 1 || $role_level === 2) {
+            return true;
         }
-        if (($role_level === 2 || $role_level === 3) && $rep_permissions && $rep_permissions->policy_delete == 1) return true;
-        return false;
+        
+        // Diğer tüm roller için sadece kullanıcı bazlı yetki kontrolü
+        return $rep_permissions && isset($rep_permissions->policy_delete) && $rep_permissions->policy_delete == 1;
     }
 }
 

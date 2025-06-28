@@ -57,6 +57,11 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
     $task_edit = isset($_POST['task_edit']) ? 1 : 0;
     $export_data = isset($_POST['export_data']) ? 1 : 0;
     $bulk_operations = isset($_POST['bulk_operations']) ? 1 : 0;
+    $can_change_customer_representative = isset($_POST['can_change_customer_representative']) ? 1 : 0;
+    $can_change_policy_representative = isset($_POST['can_change_policy_representative']) ? 1 : 0;
+    $can_change_task_representative = isset($_POST['can_change_task_representative']) ? 1 : 0;
+    $can_view_deleted_policies = isset($_POST['can_view_deleted_policies']) ? 1 : 0;
+    $can_restore_deleted_policies = isset($_POST['can_restore_deleted_policies']) ? 1 : 0;
     
     // Zorunlu alanları kontrol et
     if (empty($username)) {
@@ -155,6 +160,11 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
                     'task_edit' => $task_edit,
                     'export_data' => $export_data,
                     'bulk_operations' => $bulk_operations,
+                    'can_change_customer_representative' => $can_change_customer_representative,
+                    'can_change_policy_representative' => $can_change_policy_representative,
+                    'can_change_task_representative' => $can_change_task_representative,
+                    'can_view_deleted_policies' => $can_view_deleted_policies,
+                    'can_restore_deleted_policies' => $can_restore_deleted_policies,
                     'status' => 'active',
                     'created_at' => current_time('mysql'),
                     'updated_at' => current_time('mysql')
@@ -499,6 +509,61 @@ if (isset($_POST['submit_representative']) && isset($_POST['representative_nonce
                                         <div class="label-text">
                                             <span class="label-title">Toplu İşlemler</span>
                                             <span class="label-desc">Çoklu seçim ile toplu işlem yapabilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="can_change_customer_representative" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Müşteri Temsilci Değişimi</span>
+                                            <span class="label-desc">Müşteri düzenlerken temsilci bilgisini değiştirebilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="can_change_policy_representative" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Poliçe Temsilci Değişimi</span>
+                                            <span class="label-desc">Poliçe düzenlerken temsilci bilgisini değiştirebilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="can_change_task_representative" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Görev Temsilci Değişimi</span>
+                                            <span class="label-desc">Görev düzenlerken temsilci bilgisini değiştirebilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="can_view_deleted_policies" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Silinmiş Poliçeleri Görüntüleme</span>
+                                            <span class="label-desc">Silinmiş poliçeleri görebilir</span>
+                                        </div>
+                                    </label>
+                                </div>
+
+                                <div class="modern-permissions-row">
+                                    <label class="modern-checkbox-container">
+                                        <input type="checkbox" name="can_restore_deleted_policies" value="1">
+                                        <span class="modern-checkmark"></span>
+                                        <div class="label-text">
+                                            <span class="label-title">Silinmiş Poliçe Geri Getirme</span>
+                                            <span class="label-desc">Silinmiş poliçeyi geri getirebilir</span>
                                         </div>
                                     </label>
                                 </div>

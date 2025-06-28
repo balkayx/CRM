@@ -10,9 +10,9 @@
  * Plugin Name: Insurance CRM
  * Plugin URI: https://github.com/anadolubirlik/insurance-crm
  * Description: Sigorta acenteleri için müşteri, poliçe ve görev yönetim sistemi.
- * Version: 1.8.3
+ * Version: 1.9.0
  * Pagename: insurance-crm.php
- * Page Version: 1.8.3
+ * Page Version: 1.9.0
  * Author: Mehmet BALKAY | Anadolu Birlik
  * Author URI: https://www.balkay.net
  */
@@ -668,7 +668,7 @@ function insurance_crm_check_db_tables() {
         error_log('insurance_crm_customers tablosuna uavt_code sütunu eklendi.');
     }
     
-    // User-based permission columns check and add - New in v1.8.3
+    // User-based permission columns check and add - Updated in v1.9.0
     $permission_columns = [
         'role' => 'INT DEFAULT 5',
         'customer_edit' => 'TINYINT(1) DEFAULT 1',
@@ -677,7 +677,12 @@ function insurance_crm_check_db_tables() {
         'policy_delete' => 'TINYINT(1) DEFAULT 0',
         'task_edit' => 'TINYINT(1) DEFAULT 1',
         'export_data' => 'TINYINT(1) DEFAULT 0',
-        'bulk_operations' => 'TINYINT(1) DEFAULT 0'
+        'bulk_operations' => 'TINYINT(1) DEFAULT 0',
+        'can_change_customer_representative' => 'TINYINT(1) DEFAULT 0',
+        'can_change_policy_representative' => 'TINYINT(1) DEFAULT 0',
+        'can_change_task_representative' => 'TINYINT(1) DEFAULT 0',
+        'can_view_deleted_policies' => 'TINYINT(1) DEFAULT 0',
+        'can_restore_deleted_policies' => 'TINYINT(1) DEFAULT 0'
     ];
     
     foreach ($permission_columns as $column_name => $column_definition) {

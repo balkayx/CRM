@@ -66,75 +66,26 @@ function can_edit_customer($rep_data, $customer = null) {
         return false;
     }
     
-    // Müşteri detayları erişim ayarını kontrol et
-    $settings = get_option('insurance_crm_settings', array());
-    $allow_customer_details_access = isset($settings['permission_settings']['allow_customer_details_access']) && $settings['permission_settings']['allow_customer_details_access'];
-    
-    // Eğer genel erişim açıksa, müşteri düzenleme yapılamaz (sadece görüşme notu eklenebilir)
-    if ($allow_customer_details_access) {
-        // Sadece Patron her zaman düzenleyebilir (yönetim yetkisi)
-        if ($rep_data->role == 1) return true;
-        
-        // Diğer kullanıcılar düzenleyemez, sadece görüşme notu ekleyebilir
-        return false;
-    }
-    
-    // Genel erişim kapalıysa, normal yetki kontrolü
-    // Patron her zaman düzenleyebilir
-    if ($rep_data->role == 1) return true;
-    
-    // Müdür, yetki verilmişse düzenleyebilir
-    if ($rep_data->role == 2 && $rep_data->customer_edit == 1) {
+    // Patron (role 1) ve Müdür (role 2) her zaman tam yetkiye sahip
+    if ($rep_data->role == 1 || $rep_data->role == 2) {
         return true;
     }
     
-    // Müdür Yardımcısı, yetki verilmişse düzenleyebilir
-    if ($rep_data->role == 3 && $rep_data->customer_edit == 1) {
-        return true;
-    }
-    
-    // Ekip lideri, yetki verilmişse düzenleyebilir
-    if ($rep_data->role == 4 && $rep_data->customer_edit == 1) {
-        // Ekip liderinin kendi ekibindeki müşterileri düzenleme yetkisi
-        if ($customer) {
-            // Basitleştirmek için sadece yetkiyi kontrol ediyoruz
-            return true;
-        }
-    }
-    
-    // Müşteri temsilcisi sadece kendi müşterilerini düzenleyebilir
-    if ($rep_data->role == 5 && $customer) {
-        // Kendi müşterisi ise düzenleyebilir
-        return ($customer->representative_id == $rep_data->id);
-    }
-    
-    return false;
+    // Diğer tüm roller için sadece kullanıcı bazlı yetki kontrolü
+    return isset($rep_data->customer_edit) && $rep_data->customer_edit == 1;
 }
 
 // Kullanıcının müşteri üzerinde silme yetkisi var mı?
 function can_delete_customer($rep_data, $customer = null) {
     if (!$rep_data) return false;
     
-    // Patron her zaman silebilir
-    if ($rep_data->role == 1) return true;
-    
-    // Müdür yetki verilmişse silebilir
-    if ($rep_data->role == 2 && $rep_data->customer_delete == 1) {
+    // Patron (role 1) ve Müdür (role 2) her zaman tam yetkiye sahip
+    if ($rep_data->role == 1 || $rep_data->role == 2) {
         return true;
     }
     
-    // Müdür Yardımcısı yetki verilmişse silebilir
-    if ($rep_data->role == 3 && $rep_data->customer_delete == 1) {
-        return true;
-    }
-    
-    // Ekip lideri, yetki verilmişse kendi ekibindeki müşterileri silebilir
-    if ($rep_data->role == 4 && $rep_data->customer_delete == 1 && $customer) {
-        // Ekip liderinin ekip üyesi müşterilerini silme yetkisi
-        return true;
-    }
-    
-    return false;
+    // Diğer tüm roller için sadece kullanıcı bazlı yetki kontrolü
+    return isset($rep_data->customer_delete) && $rep_data->customer_delete == 1;
 }
 
 // Kullanıcının müşteri detaylarını görüntüleme yetkisi var mı?

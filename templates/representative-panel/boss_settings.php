@@ -58,31 +58,19 @@ if (!function_exists('check_user_permission')) {
 
 if (!function_exists('can_change_customer_representative')) {
     function can_change_customer_representative($user_id = null) {
-        return check_user_permission('customer_edit', $user_id);
+        return check_user_permission('can_change_customer_representative', $user_id);
     }
 }
 
 if (!function_exists('can_change_policy_representative')) {
     function can_change_policy_representative($user_id = null) {
-        return check_user_permission('policy_edit', $user_id);
+        return check_user_permission('can_change_policy_representative', $user_id);
     }
 }
 
 if (!function_exists('can_change_task_representative')) {
     function can_change_task_representative($user_id = null) {
-        // Since task_edit column might not exist, let's use customer_edit as fallback
-        global $wpdb;
-        $user_id = $user_id ?: get_current_user_id();
-        
-        // Check if task_edit column exists
-        $columns = $wpdb->get_results("SHOW COLUMNS FROM {$wpdb->prefix}insurance_crm_representatives LIKE 'task_edit'");
-        
-        if (!empty($columns)) {
-            return check_user_permission('task_edit', $user_id);
-        } else {
-            // Fallback to customer_edit permission
-            return check_user_permission('customer_edit', $user_id);
-        }
+        return check_user_permission('can_change_task_representative', $user_id);
     }
 }
 
@@ -94,8 +82,13 @@ if (!function_exists('can_delete_policy_permission')) {
 
 if (!function_exists('can_view_deleted_policies')) {
     function can_view_deleted_policies($user_id = null) {
-        // This might need a new column, for now use policy_delete as proxy
-        return check_user_permission('policy_delete', $user_id);
+        return check_user_permission('can_view_deleted_policies', $user_id);
+    }
+}
+
+if (!function_exists('can_restore_deleted_policies')) {
+    function can_restore_deleted_policies($user_id = null) {
+        return check_user_permission('can_restore_deleted_policies', $user_id);
     }
 }
 
@@ -107,7 +100,6 @@ if (!function_exists('can_delete_customer')) {
 
 if (!function_exists('can_view_deleted_customers')) {
     function can_view_deleted_customers($user_id = null) {
-        // This might need a new column, for now use customer_delete as proxy
         return check_user_permission('customer_delete', $user_id);
     }
 }
