@@ -3140,8 +3140,8 @@ function generate_simple_pdf_content($title, $data, $type) {
     // Create a comprehensive PDF structure with landscape orientation and multi-page support
     $pdf_content = "%PDF-1.4\n";
     
-    // Calculate total pages needed with optimized items per page
-    $items_per_page = 40; // Increased items per page with better absolute positioning
+    // Calculate total pages needed with optimized items per page for consistent layout
+    $items_per_page = 25; // Reduced to ensure consistent layout across all pages
     $total_pages = max(1, ceil(count($data) / $items_per_page));
     
     // Objects
@@ -3204,8 +3204,11 @@ function generate_simple_pdf_content($title, $data, $type) {
         $content .= "1 0 0 1 50 491 Tm\n"; // Absolute position for separator line
         $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
         
-        // Add data rows with absolute positioning for consistency
-        $current_y = 477; // Starting Y position for data rows
+        // Add data rows with consistent absolute positioning for each page
+        $start_y = 470; // Fixed starting Y position for data rows
+        $row_spacing = 14; // Fixed spacing between rows
+        $current_y = $start_y;
+        
         foreach ($page_data as $item) {
             $content .= "/F1 8 Tf\n"; // Consistent data font size
             $content .= "1 0 0 1 50 $current_y Tm\n"; // Absolute position for each row
@@ -3249,7 +3252,7 @@ function generate_simple_pdf_content($title, $data, $type) {
             }
             
             $content .= "(" . addslashes($line) . ") Tj\n";
-            $current_y -= 12; // Decrease Y position for next row (12 points spacing)
+            $current_y -= $row_spacing; // Use fixed spacing for consistent layout
         }
         
         $content .= "ET\n";
