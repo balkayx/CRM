@@ -223,6 +223,127 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_quote_status' && iss
     exit;
 }
 
+// Task Notes functionality - adapted from tasks.php
+// Handle task note actions
+if (isset($_POST['action']) && in_array($_POST['action'], ['save_task_note', 'delete_task_note']) && isset($_POST['nonce']) && wp_verify_nonce($_POST['nonce'], 'task_note_nonce')) {
+    $current_user_id = get_current_user_id();
+    $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
+    
+    if ($_POST['action'] == 'save_task_note' && isset($_POST['task_id']) && isset($_POST['note_content'])) {
+        $task_id = intval($_POST['task_id']);
+        $note_content = sanitize_textarea_field($_POST['note_content']);
+        
+        if (!empty($note_content)) {
+            $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+            
+            // Check if table exists before attempting insert
+            $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+            if ($table_exists != $notes_table) {
+                $notice_message = 'Notlar tablosu bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.';
+                $notice_type = 'error';
+            } else {
+                $result = $wpdb->insert(
+                    $notes_table,
+                    array(
+                        'task_id' => $task_id,
+                        'note_content' => $note_content,
+                        'created_by' => $current_user_id,
+                        'created_at' => current_time('mysql')
+                    ),
+                    array('%d', '%s', '%d', '%s')
+                );
+                
+                if ($result === false) {
+                    $notice_message = 'Not kaydedilemedi. Hata: ' . $wpdb->last_error;
+                    $notice_type = 'error';
+                } else {
+                    $notice_message = 'Not başarıyla kaydedildi.';
+                    $notice_type = 'success';
+                }
+            }
+        } else {
+            $notice_message = 'Not içeriği boş olamaz.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Handle delete task note
+    if ($_POST['action'] == 'delete_task_note' && isset($_POST['note_id'])) {
+        $note_id = intval($_POST['note_id']);
+        $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+        
+        // Check if user can delete this note
+        $note = $wpdb->get_row($wpdb->prepare("SELECT * FROM $notes_table WHERE id = %d", $note_id));
+        if ($note && ($note->created_by == $current_user_id || $is_wp_admin_or_manager)) {
+            $result = $wpdb->delete(
+                $notes_table,
+                array('id' => $note_id),
+                array('%d')
+            );
+            
+            if ($result === false) {
+                $notice_message = 'Not silinemedi. Hata: ' . $wpdb->last_error;
+                $notice_type = 'error';
+            } else {
+                $notice_message = 'Not başarıyla silindi.';
+                $notice_type = 'success';
+            }
+        } else {
+            $notice_message = 'Bu notu silme yetkiniz bulunmamaktadır.';
+            $notice_type = 'error';
+        }
+    }
+    
+    // Redirect to prevent form resubmission
+    if (!empty($notice_message)) {
+        $redirect_url = add_query_arg(array(
+            'notice_message' => urlencode($notice_message),
+            'notice_type' => $notice_type
+        ), $_SERVER['REQUEST_URI']);
+        wp_redirect($redirect_url);
+        exit;
+    }
+}
+
+// Handle notice display from URL parameters
+if (isset($_GET['notice_message'])) {
+    $notice_message = urldecode($_GET['notice_message']);
+    $notice_type = isset($_GET['notice_type']) ? $_GET['notice_type'] : 'info';
+}
+
+// Function to get task notes
+if (!function_exists('get_task_notes')) {
+    function get_task_notes($task_id) {
+    global $wpdb;
+    $current_user_id = get_current_user_id();
+    $is_wp_admin_or_manager = current_user_can('administrator') || current_user_can('insurance_manager');
+    $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+    
+    // Check if table exists
+    $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+    if ($table_exists != $notes_table) {
+        return array();
+    }
+    
+    $notes = $wpdb->get_results($wpdb->prepare("
+        SELECT tn.*, u.display_name as created_by_name 
+        FROM $notes_table tn 
+        LEFT JOIN {$wpdb->users} u ON tn.created_by = u.ID 
+        WHERE tn.task_id = %d 
+        ORDER BY tn.created_at DESC
+    ", $task_id));
+    
+    if ($notes) {
+        foreach ($notes as $note) {
+            $note->can_edit = ($note->created_by == $current_user_id || $is_wp_admin_or_manager);
+            $note->created_at_formatted = date('d.m.Y H:i', strtotime($note->created_at));
+        }
+    }
+    
+    return $notes ? $notes : array();
+}
+}
+
 $customer_id = intval($_GET['id']);
 global $wpdb;
 $customers_table = $wpdb->prefix . 'insurance_crm_customers';
@@ -1201,6 +1322,22 @@ function format_file_size($size) {
         <?php unset($_SESSION['crm_notice']); ?>
     <?php endif; ?>
 
+    <?php if (isset($notice_message)): ?>
+        <div id="taskNoteNotice" class="task-note-notice-box task-note-notice-<?php echo esc_attr($notice_type); ?>">
+            <div class="task-note-notice-content">
+                <div class="task-note-notice-icon">
+                    <i class="fas <?php echo $notice_type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'; ?>"></i>
+                </div>
+                <div class="task-note-notice-message">
+                    <?php echo esc_html($notice_message); ?>
+                </div>
+                <button type="button" class="task-note-notice-dismiss" onclick="dismissTaskNoteNotice()">
+                    Tamam
+                </button>
+            </div>
+        </div>
+    <?php endif; ?>
+
     <div id="ajax-response-container"></div>
     
     <!-- Müşteri Bilgileri -->
@@ -2132,15 +2269,47 @@ function format_file_size($size) {
                             <?php foreach ($tasks as $task):
                                 $is_overdue = strtotime($task->due_date) < time() && $task->status != 'completed';
                                 $row_class = $is_overdue ? 'overdue' : '';
+                                
+                                // Check if task has notes
+                                $notes_table = $wpdb->prefix . 'insurance_crm_task_notes';
+                                $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$notes_table'");
+                                $note_count = 0;
+                                $task_notes = array();
+                                
+                                if ($table_exists == $notes_table) {
+                                    $note_count = $wpdb->get_var($wpdb->prepare(
+                                        "SELECT COUNT(*) FROM {$notes_table} WHERE task_id = %d",
+                                        $task->id
+                                    ));
+                                    
+                                    if ($note_count > 0) {
+                                        $task_notes = get_task_notes($task->id);
+                                    }
+                                }
                             ?>
                                 <tr class="<?php echo $row_class; ?>">
                                     <td>
-                                        <a href="?view=tasks&action=edit&id=<?php echo $task->id; ?>">
-                                            <?php echo esc_html($task->task_description); ?>
-                                        </a>
-                                        <?php if ($is_overdue): ?>
-                                            <span class="ab-badge ab-badge-overdue">Gecikmiş</span>
-                                        <?php endif; ?>
+                                        <div class="task-header">
+                                            <a href="?view=tasks&action=edit&id=<?php echo $task->id; ?>">
+                                                <?php echo esc_html($task->task_description); ?>
+                                            </a>
+                                            <?php if ($is_overdue): ?>
+                                                <span class="ab-badge ab-badge-overdue">Gecikmiş</span>
+                                            <?php endif; ?>
+                                            
+                                            <!-- Task Notes Button -->
+                                            <div class="task-notes-toggle">
+                                                <?php if ($note_count > 0): ?>
+                                                    <button type="button" class="ab-btn ab-btn-sm task-notes-btn" onclick="toggleTaskNotes(<?php echo $task->id; ?>)" title="<?php echo $note_count; ?> not var">
+                                                        <i class="fas fa-comment-dots"></i> <?php echo $note_count; ?> Not
+                                                    </button>
+                                                <?php else: ?>
+                                                    <button type="button" class="ab-btn ab-btn-sm ab-btn-outline task-notes-btn" onclick="toggleTaskNotes(<?php echo $task->id; ?>)" title="Not ekle">
+                                                        <i class="fas fa-plus"></i> Not Ekle
+                                                    </button>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
                                     </td>
                                     <td><?php echo date('d.m.Y', strtotime($task->due_date)); ?></td>
                                     <td>
@@ -2178,6 +2347,73 @@ function format_file_size($size) {
                                                 <i class="fas fa-check"></i>
                                             </a>
                                             <?php endif; ?>
+                                        </div>
+                                    </td>
+                                </tr>
+                                
+                                <!-- Task Notes Row -->
+                                <tr class="task-notes-row" id="task-notes-<?php echo $task->id; ?>" style="display: none;">
+                                    <td colspan="5" class="task-notes-cell">
+                                        <div class="task-notes-container">
+                                            
+                                            <!-- Add Note Form -->
+                                            <div class="task-note-add-form" style="margin-bottom: 15px;">
+                                                <form method="post" action="">
+                                                    <?php wp_nonce_field('task_note_nonce', 'nonce'); ?>
+                                                    <input type="hidden" name="action" value="save_task_note">
+                                                    <input type="hidden" name="task_id" value="<?php echo $task->id; ?>">
+                                                    <div class="ab-form-row">
+                                                        <div class="ab-form-group ab-full-width">
+                                                            <label for="note_content_<?php echo $task->id; ?>">Yeni Not Ekle</label>
+                                                            <textarea name="note_content" id="note_content_<?php echo $task->id; ?>" rows="3" placeholder="Not içeriğini yazın..." required></textarea>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ab-form-actions">
+                                                        <button type="submit" class="ab-btn ab-btn-primary ab-btn-sm">
+                                                            <i class="fas fa-save"></i> Not Kaydet
+                                                        </button>
+                                                        <button type="button" class="ab-btn ab-btn-secondary ab-btn-sm" onclick="toggleTaskNotes(<?php echo $task->id; ?>)">
+                                                            <i class="fas fa-times"></i> Kapat
+                                                        </button>
+                                                    </div>
+                                                </form>
+                                            </div>
+                                            
+                                            <!-- Existing Notes -->
+                                            <?php if (!empty($task_notes)): ?>
+                                            <div class="task-notes-list">
+                                                <h4><i class="fas fa-comments"></i> Mevcut Notlar (<?php echo count($task_notes); ?>)</h4>
+                                                <?php foreach ($task_notes as $note): ?>
+                                                <div class="task-note-item">
+                                                    <div class="task-note-header">
+                                                        <div class="task-note-meta">
+                                                            <span class="task-note-user">
+                                                                <i class="fas fa-user"></i> <?php echo esc_html($note->created_by_name); ?>
+                                                            </span>
+                                                            <span class="task-note-date">
+                                                                <i class="fas fa-clock"></i> <?php echo esc_html($note->created_at_formatted); ?>
+                                                            </span>
+                                                        </div>
+                                                        <?php if ($note->can_edit): ?>
+                                                        <div class="task-note-actions">
+                                                            <button type="button" class="task-note-delete-btn" onclick="deleteTaskNote(<?php echo $note->id; ?>)" title="Sil">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </div>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                    <div class="task-note-content">
+                                                        <?php echo nl2br(esc_html($note->note_content)); ?>
+                                                    </div>
+                                                </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                            <?php else: ?>
+                                            <div class="no-task-notes" style="text-align: center; color: #6c757d; font-style: italic; margin-top: 10px;">
+                                                <i class="fas fa-comment-slash"></i> Bu göreve henüz not eklenmemiş.
+                                            </div>
+                                            <?php endif; ?>
+                                            
                                         </div>
                                     </td>
                                 </tr>
@@ -2302,6 +2538,7 @@ function format_file_size($size) {
                 </div>
             </div>
         </div>
+
 
 <style>
 /* Temel Stiller */
@@ -4354,6 +4591,279 @@ tr.overdue td {
         align-items: stretch;
     }
 }
+
+/* Task Notes Styles */
+.task-notes-list {
+    margin-bottom: 20px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.task-note-item {
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.task-note-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #666;
+}
+
+.task-note-header strong {
+    color: #333;
+    font-size: 14px;
+}
+
+.task-note-date {
+    color: #888;
+}
+
+.task-note-actions {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.task-note-actions button {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.task-note-actions button:hover {
+    background-color: #e9ecef;
+}
+
+.task-note-actions .btn-edit {
+    color: #007bff;
+}
+
+.task-note-actions .btn-delete {
+    color: #dc3545;
+}
+
+.task-note-content {
+    color: #333;
+    line-height: 1.6;
+    white-space: pre-line;
+    font-size: 14px;
+}
+
+.task-notes-actions {
+    padding-top: 15px;
+    border-top: 1px solid #e9ecef;
+    margin-top: 15px;
+}
+
+.no-task-notes {
+    text-align: center;
+    color: #6c757d;
+    padding: 30px;
+    font-style: italic;
+}
+
+.no-task-notes i {
+    font-size: 48px;
+    color: #dee2e6;
+    margin-bottom: 15px;
+    display: block;
+}
+
+/* Inline Task Notes Styles */
+.task-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.task-notes-toggle {
+    margin-left: auto;
+}
+
+.task-notes-btn {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 12px;
+}
+
+.task-notes-row {
+    background-color: #f8f9fa;
+}
+
+.task-notes-cell {
+    padding: 15px !important;
+    border-top: 1px solid #e9ecef;
+}
+
+.task-notes-container {
+    background: white;
+    border-radius: 8px;
+    padding: 15px;
+    border: 1px solid #e9ecef;
+}
+
+.task-note-add-form {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 6px;
+    border: 1px solid #e9ecef;
+}
+
+.task-notes-list h4 {
+    margin: 0 0 15px 0;
+    color: #495057;
+    font-size: 14px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.task-note-meta {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.task-note-user, .task-note-date {
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.task-note-user i, .task-note-date i {
+    margin-right: 4px;
+}
+
+.task-note-edit-btn, .task-note-delete-btn {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.task-note-edit-btn {
+    color: #007bff;
+}
+
+.task-note-delete-btn {
+    color: #dc3545;
+}
+
+.task-note-edit-btn:hover, .task-note-delete-btn:hover {
+    background-color: #e9ecef;
+}
+
+/* Responsive Design for inline task notes */
+@media (max-width: 768px) {
+    .task-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .task-notes-toggle {
+        margin-left: 0;
+        margin-top: 8px;
+    }
+    
+    .task-note-meta {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+}
+
+/* Task Note Notice Box Styles */
+.task-note-notice-box {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    max-width: 500px;
+    width: 90%;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideInDown 0.3s ease-out;
+}
+
+.task-note-notice-success {
+    background: linear-gradient(135deg, #4caf50, #45a049);
+    color: white;
+}
+
+.task-note-notice-error {
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+    color: white;
+}
+
+.task-note-notice-content {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    gap: 12px;
+}
+
+.task-note-notice-icon {
+    font-size: 24px;
+    min-width: 24px;
+}
+
+.task-note-notice-message {
+    flex: 1;
+    font-weight: 500;
+    font-size: 15px;
+}
+
+.task-note-notice-dismiss {
+    background: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.task-note-notice-dismiss:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+@keyframes slideInDown {
+    from {
+        transform: translateX(-50%) translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutUp {
+    from {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(-50%) translateY(-100%);
+        opacity: 0;
+    }
+}
 </style>
 
 <script>
@@ -5114,4 +5624,75 @@ $(document).ready(function() {
         }
     });
 });
+
+// Inline Task Notes JavaScript Functions
+function toggleTaskNotes(taskId) {
+    var notesRow = document.getElementById('task-notes-' + taskId);
+    if (notesRow.style.display === 'none') {
+        notesRow.style.display = 'table-row';
+        // Focus on the textarea
+        var textarea = notesRow.querySelector('textarea');
+        if (textarea) {
+            setTimeout(function() {
+                textarea.focus();
+            }, 100);
+        }
+    } else {
+        notesRow.style.display = 'none';
+    }
+}
+
+function deleteTaskNote(noteId) {
+    if (confirm('Bu notu silmek istediğinizden emin misiniz?')) {
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.style.display = 'none';
+        
+        var actionInput = document.createElement('input');
+        actionInput.type = 'hidden';
+        actionInput.name = 'action';
+        actionInput.value = 'delete_task_note';
+        
+        var noteIdInput = document.createElement('input');
+        noteIdInput.type = 'hidden';
+        noteIdInput.name = 'note_id';
+        noteIdInput.value = noteId;
+        
+        var nonceInput = document.createElement('input');
+        nonceInput.type = 'hidden';
+        nonceInput.name = 'nonce';
+        nonceInput.value = '<?php echo wp_create_nonce("task_note_nonce"); ?>';
+        
+        form.appendChild(actionInput);
+        form.appendChild(noteIdInput);
+        form.appendChild(nonceInput);
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+function escapeHtml(text) {
+    var map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+}
+
+function escapeJs(text) {
+    return text.replace(/'/g, "\\'").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+}
+
+function dismissTaskNoteNotice() {
+    var noticeBox = document.getElementById('taskNoteNotice');
+    if (noticeBox) {
+        noticeBox.style.animation = 'slideOutUp 0.3s ease-in forwards';
+        setTimeout(function() {
+            noticeBox.remove();
+        }, 300);
+    }
+}
 </script>
