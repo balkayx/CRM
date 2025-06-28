@@ -23,6 +23,35 @@ $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
 $teams_table = $wpdb->prefix . 'insurance_crm_teams';
 $users_table = $wpdb->users;
 
+// Define permission checking function if not already defined globally
+if (!function_exists('can_export_data')) {
+    function can_export_data($user_id = null) {
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        $rep = $wpdb->get_row($wpdb->prepare(
+            "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            $user_id
+        ));
+        
+        if (!$rep) {
+            return false;
+        }
+        
+        $role_id = intval($rep->role);
+        
+        // Patron (role 1) and Müdür (role 2) have all permissions including export
+        if ($role_id === 1 || $role_id === 2) {
+            return true;
+        }
+        
+        // For other roles, check individual export_data permission
+        $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+        
+        return $export_permission === 1;
+    }
+}
+
 /**
  * BACKWARD COMPATIBILITY FUNCTIONS - Sadece tanımlı değilse oluştur
  */
@@ -181,6 +210,35 @@ function get_team_for_leader($leader_rep_id) {
     }
     
     return array('team_id' => null, 'members' => array($leader_rep_id)); // Sadece lider
+}
+
+if (!function_exists('can_export_data')) {
+    function can_export_data($user_id = null) {
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        // Get user's role and export permission
+        $rep = $wpdb->get_row($wpdb->prepare(
+            "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            $user_id
+        ));
+        
+        if (!$rep) {
+            return false;
+        }
+        
+        $role_id = intval($rep->role);
+        
+        // Patron (role 1) and Müdür (role 2) have all permissions including export
+        if ($role_id === 1 || $role_id === 2) {
+            return true;
+        }
+        
+        // For other roles, check individual export_data permission
+        $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+        
+        return $export_permission === 1;
+    }
 }
 
 $current_rep = get_current_user_rep_data();
@@ -610,6 +668,8 @@ for ($i = 5; $i >= 0; $i--) {
 // Toplam müşteri sayısını al (filtreli sayfa için)
 $total_items = $wpdb->get_var("SELECT COUNT(DISTINCT c.id) " . $base_query);
 
+
+
 // Sıralama
 $orderby = isset($_GET['orderby']) ? sanitize_text_field($_GET['orderby']) : 'c.created_at';
 $order = isset($_GET['order']) && in_array(strtoupper($_GET['order']), array('ASC', 'DESC')) ? strtoupper($_GET['order']) : 'DESC';
@@ -758,6 +818,7 @@ $debug_mode = false; // Geliştirici modu - aktifleştirirseniz SQL sorguların�
     <!-- Load jQuery BEFORE Chart.js -->
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
 
@@ -849,6 +910,18 @@ $debug_mode = false; // Geliştirici modu - aktifleştirirseniz SQL sorguların�
                     </a>
                     <?php endif; ?>
                 </div>
+
+                <?php if (can_export_data()): ?>
+                <!-- Export Buttons -->
+                <div class="export-buttons-group">
+                    <button type="button" class="btn btn-outline export-csv-btn" onclick="exportCustomersData('csv')" title="CSV Dışa Aktar">
+                        <i class="fas fa-file-csv"></i>
+                    </button>
+                    <button type="button" class="btn btn-outline export-pdf-btn" onclick="exportCustomersData('pdf')" title="PDF Dışa Aktar">
+                        <i class="fas fa-file-pdf"></i>
+                    </button>
+                </div>
+                <?php endif; ?>
 
                 <?php if ($current_rep && ($current_rep->role == 1 || $current_rep->role == 2 || $current_rep->role == 3 || $current_rep->role == 4 || $current_rep->role == 5)): ?>
                 <a href="?view=<?php echo esc_attr($view_type); ?>&action=new" class="btn btn-primary">
@@ -1905,6 +1978,54 @@ $debug_mode = false; // Geliştirici modu - aktifleştirirseniz SQL sorguların�
     min-height: 100vh;
     padding: var(--spacing-lg);
     margin: 0;
+}
+
+/* Export Buttons Styling */
+.export-buttons-group {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.export-csv-btn {
+    color: #2e7d32;
+    border-color: #2e7d32;
+}
+
+.export-csv-btn:hover {
+    background-color: #2e7d32;
+    color: white;
+}
+
+.export-pdf-btn {
+    color: #d32f2f;
+    border-color: #d32f2f;
+}
+
+.export-pdf-btn:hover {
+    background-color: #d32f2f;
+    color: white;
+}
+
+.export-buttons-group .btn {
+    padding: 8px 12px;
+    font-size: 0.875rem;
+    min-width: auto;
+}
+
+@media (max-width: 768px) {
+    .export-buttons-group {
+        gap: 4px;
+    }
+    
+    .export-buttons-group .btn span {
+        display: none;
+    }
+    
+    .export-buttons-group .btn {
+        padding: 8px;
+        min-width: 40px;
+    }
 }
 
 .debug-info {
@@ -4346,8 +4467,118 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('  3. ✅ Improved table design and responsiveness');
     console.log('  4. ✅ All original filter functionality preserved');
     console.log('  5. ✅ New generation design tools implemented');
+    console.log('  6. ✅ Export functionality with permissions');
     console.log('💡 Press F1 for keyboard shortcuts help');
 });
+
+// Export functionality for customers
+// Export functionality for customers - AJAX based
+function exportCustomersData(format) {
+    // Show loading indicator
+    const loadingHtml = `
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <div style="width: 20px; height: 20px; border: 2px solid #f3f3f3; border-top: 2px solid #1976d2; border-radius: 50%; animation: spin 1s linear infinite;"></div>
+            <span>Veriler hazırlanıyor...</span>
+        </div>
+        <style>
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        </style>
+    `;
+    
+    Swal.fire({
+        title: format.toUpperCase() + ' Dışa Aktarılıyor',
+        html: loadingHtml,
+        allowOutsideClick: false,
+        showConfirmButton: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+
+    // Get current filters from the form or URL
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    // Prepare data for AJAX request
+    const formData = new FormData();
+    formData.append('action', 'export_customers_data');
+    formData.append('format', format);
+    formData.append('nonce', '<?php echo wp_create_nonce("export_customers_data"); ?>');
+    
+    // Add current filters to maintain the same view
+    for (const [key, value] of urlParams.entries()) {
+        if (key !== 'action' && key !== 'id') {
+            formData.append(key, value);
+        }
+    }
+    
+    // Use XMLHttpRequest for file download
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '<?php echo admin_url("admin-ajax.php"); ?>', true);
+    xhr.responseType = 'blob';
+    
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            // Create blob and download
+            const blob = new Blob([xhr.response], { 
+                type: format === 'csv' ? 'text/csv' : 'application/pdf' 
+            });
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            
+            // Get filename from content-disposition header or generate one
+            const disposition = xhr.getResponseHeader('Content-Disposition');
+            let filename = 'customers_' + new Date().toISOString().slice(0,19).replace(/:/g, '-');
+            if (disposition && disposition.indexOf('filename=') !== -1) {
+                filename = disposition.split('filename=')[1].replace(/"/g, '');
+            } else {
+                filename += format === 'csv' ? '.csv' : '.pdf';
+            }
+            
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            Swal.close();
+            Swal.fire({
+                icon: 'success',
+                title: 'Başarılı!',
+                text: format.toUpperCase() + ' dosyası indirildi.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } else {
+            Swal.close();
+            Swal.fire({
+                icon: 'error',
+                title: 'Hata!',
+                text: 'Export sırasında bir hata oluştu.',
+                timer: 3000,
+                showConfirmButton: false
+            });
+        }
+    };
+    
+    xhr.onerror = function() {
+        Swal.close();
+        Swal.fire({
+            icon: 'error',
+            title: 'Hata!',
+            text: 'Bağlantı hatası oluştu.',
+            timer: 3000,
+            showConfirmButton: false
+        });
+    };
+    
+    xhr.send(formData);
+}
 </script>
 
 <?php

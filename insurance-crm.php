@@ -2787,4 +2787,520 @@ function handle_toggle_representative_status() {
         wp_send_json_error(array('message' => 'Güncelleme sırasında bir hata oluştu: ' . $wpdb->last_error));
     }
 }
-?>
+
+/**
+ * Export AJAX Handlers
+ */
+add_action('wp_ajax_export_policies_data', 'handle_export_policies_data');
+add_action('wp_ajax_export_customers_data', 'handle_export_customers_data');
+
+function handle_export_policies_data() {
+    // Check nonce for security
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'export_policies_data')) {
+        wp_die('Security check failed');
+    }
+    
+    // Check permissions
+    if (!can_export_data()) {
+        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
+    }
+    
+    $export_format = sanitize_text_field($_POST['format'] ?? '');
+    
+    if (!in_array($export_format, ['csv', 'pdf'])) {
+        wp_die('Geçersiz export formatı');
+    }
+    
+    try {
+        export_policies_data($export_format, $_POST);
+    } catch (Exception $e) {
+        wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+    }
+}
+
+function handle_export_customers_data() {
+    // Check nonce for security
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'export_customers_data')) {
+        wp_die('Security check failed');
+    }
+    
+    // Check permissions
+    if (!can_export_data()) {
+        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
+    }
+    
+    $export_format = sanitize_text_field($_POST['format'] ?? '');
+    
+    if (!in_array($export_format, ['csv', 'pdf'])) {
+        wp_die('Geçersiz export formatı');
+    }
+    
+    try {
+        export_customers_data($export_format, $_POST);
+    } catch (Exception $e) {
+        wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+    }
+}
+
+// Permission checking function (used by both exports)
+function can_export_data($user_id = null) {
+    global $wpdb;
+    $user_id = $user_id ?: get_current_user_id();
+    
+    $rep = $wpdb->get_row($wpdb->prepare(
+        "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+        $user_id
+    ));
+    
+    if (!$rep) {
+        return false;
+    }
+    
+    $role_id = intval($rep->role);
+    
+    // Patron (role 1) and Müdür (role 2) have all permissions including export
+    if ($role_id === 1 || $role_id === 2) {
+        return true;
+    }
+    
+    // For other roles, check individual export_data permission
+    $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+    
+    return $export_permission === 1;
+}
+
+// Export functions
+function export_policies_data($format, $filters) {
+    global $wpdb;
+    
+    // Export ALL authorized data - ignore filters to get complete dataset
+    $where_conditions = ["p.deleted_at IS NULL"];
+    $query_params = [];
+    
+    // Build the WHERE clause - only include non-deleted records
+    $where_clause = "WHERE " . implode(" AND ", $where_conditions);
+    
+    $query = "
+        SELECT p.*, 
+               CONCAT(c.first_name, ' ', c.last_name) as customer_name,
+               c.first_name, c.last_name, c.tc_identity, c.tax_number,
+               u.display_name as representative_name
+        FROM {$wpdb->prefix}insurance_crm_policies p
+        LEFT JOIN {$wpdb->prefix}insurance_crm_customers c ON p.customer_id = c.id
+        LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON p.representative_id = r.id
+        LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
+        $where_clause
+        ORDER BY p.created_at DESC
+    ";
+    
+    $policies = $wpdb->get_results($query);
+    
+    if ($format === 'csv') {
+        export_policies_csv($policies);
+    } elseif ($format === 'pdf') {
+        export_policies_pdf($policies);
+    }
+}
+
+function export_customers_data($format, $filters) {
+    global $wpdb;
+    
+    // Get current user's representative data - match customers.php logic exactly
+    $current_user_id = get_current_user_id();
+    $current_user_rep_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+        $current_user_id
+    ));
+    
+    $current_user_role = $wpdb->get_var($wpdb->prepare(
+        "SELECT role FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+        $current_user_id
+    ));
+    
+    // Determine access level based on role - match customers.php exactly
+    $access_level = 'temsilci'; // default
+    switch ($current_user_role) {
+        case '1':
+            $access_level = 'patron';
+            break;
+        case '2':
+            $access_level = 'mudur';
+            break;
+        case '3':
+            $access_level = 'mudur_yardimcisi';
+            break;
+        case '4':
+            $access_level = 'ekip_lideri';
+            break;
+        case '5':
+            $access_level = 'temsilci';
+            break;
+    }
+    
+    // Get team info for team leaders - match customers.php logic
+    $team_info = ['members' => []];
+    if ($access_level == 'ekip_lideri') {
+        $settings = get_option('insurance_crm_settings', array());
+        $teams = isset($settings['teams_settings']['teams']) ? $settings['teams_settings']['teams'] : array();
+        
+        foreach ($teams as $team) {
+            if (isset($team['leader']) && $team['leader'] == $current_user_rep_id) {
+                $team_info['members'] = isset($team['members']) ? array_map('intval', $team['members']) : array();
+                break;
+            }
+        }
+    }
+    
+    // Load visibility function if not available
+    if (!function_exists('build_policy_based_customer_visibility')) {
+        require_once(plugin_dir_path(__FILE__) . 'includes/functions.php');
+    }
+    
+    // Build base query exactly like customers.php
+    $customers_table = $wpdb->prefix . 'insurance_crm_customers';
+    $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
+    $users_table = $wpdb->users;
+    $policies_table = $wpdb->prefix . 'insurance_crm_policies';
+    
+    $base_query = "FROM $customers_table c 
+                   LEFT JOIN $representatives_table r ON c.representative_id = r.id
+                   LEFT JOIN $users_table u ON r.user_id = u.ID
+                   LEFT JOIN $representatives_table fr ON c.ilk_kayit_eden = fr.id
+                   LEFT JOIN $users_table fu ON fr.user_id = fu.ID
+                   WHERE 1=1";
+    
+    // Apply visibility restrictions exactly like customers.php
+    $team_members = !empty($team_info['members']) ? $team_info['members'] : array();
+    $visibility_config = build_policy_based_customer_visibility($access_level, $current_user_rep_id, $team_members, 'customers');
+    
+    if (!empty($visibility_config['where_clause'])) {
+        $base_query .= $visibility_config['where_clause'];
+    }
+    
+    if (!empty($visibility_config['join_clause'])) {
+        $base_query = str_replace("FROM $customers_table c", "FROM $customers_table c " . $visibility_config['join_clause'], $base_query);
+    }
+    
+    // Build final query with all customer data
+    $query = "
+        SELECT c.*, CONCAT(c.first_name, ' ', c.last_name) AS customer_name, 
+               u.display_name as representative_name, 
+               fu.display_name as first_registrar_name,
+               CASE 
+                   WHEN c.representative_id != " . intval($current_user_rep_id) . " 
+                        AND EXISTS (
+                            SELECT 1 FROM $policies_table p 
+                            WHERE p.customer_id = c.id 
+                            AND p.representative_id = " . intval($current_user_rep_id) . "
+                        ) THEN 1
+                   ELSE 0
+               END as is_policy_customer
+        " . $base_query . " 
+        ORDER BY c.created_at DESC
+    ";
+    
+    $customers = $wpdb->get_results($query);
+    
+    if ($format === 'csv') {
+        export_customers_csv($customers);
+    } elseif ($format === 'pdf') {
+        export_customers_pdf($customers);
+    }
+}
+
+function export_policies_csv($policies) {
+    // Clear any previous output
+    ob_clean();
+    
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.csv"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    $output = fopen('php://output', 'w');
+    
+    // Add BOM for UTF-8
+    fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+    
+    // CSV Headers
+    $headers = [
+        'ID', 'Müşteri Adı', 'TC/VKN', 'Poliçe No', 'Poliçe Türü', 'Sigorta Şirketi',
+        'Başlangıç Tarihi', 'Bitiş Tarihi', 'Prim Tutarı', 'Durum', 'Kategori',
+        'Temsilci', 'Oluşturulma Tarihi'
+    ];
+    fputcsv($output, $headers);
+    
+    // CSV Data
+    foreach ($policies as $policy) {
+        $row = [
+            $policy->id,
+            ($policy->first_name ?? '') . ' ' . ($policy->last_name ?? ''),
+            $policy->tc_identity ?: $policy->tax_number ?: '',
+            $policy->policy_number ?: '',
+            $policy->policy_type ?: '',
+            $policy->insurance_company ?: '',
+            $policy->start_date ? date('d.m.Y', strtotime($policy->start_date)) : '',
+            $policy->end_date ? date('d.m.Y', strtotime($policy->end_date)) : '',
+            $policy->premium_amount ? number_format($policy->premium_amount, 2) : '0',
+            $policy->status ?: '',
+            $policy->policy_category ?: '',
+            $policy->representative_name ?: '',
+            $policy->created_at ? date('d.m.Y H:i', strtotime($policy->created_at)) : ''
+        ];
+        fputcsv($output, $row);
+    }
+    
+    fclose($output);
+    exit;
+}
+
+function export_customers_csv($customers) {
+    // Clear any previous output
+    ob_clean();
+    
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.csv"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    $output = fopen('php://output', 'w');
+    
+    // Add BOM for UTF-8
+    fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+    
+    // Enhanced CSV Headers with more comprehensive data
+    $headers = [
+        'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Şirket Adı', 'Telefon', 'Email',
+        'Adres', 'Şehir', 'Doğum Tarihi', 'Meslek', 'Not', 'Temsilci', 'Ekip', 'Oluşturulma Tarihi'
+    ];
+    fputcsv($output, $headers);
+    
+    // CSV Data with comprehensive customer information
+    foreach ($customers as $customer) {
+        $row = [
+            $customer->id ?: '',
+            $customer->first_name ?: '',
+            $customer->last_name ?: '',
+            $customer->tc_identity ?: '',
+            $customer->tax_number ?: '',
+            $customer->company_name ?: '',
+            $customer->phone ?: '',
+            $customer->email ?: '',
+            $customer->address ?: '',
+            $customer->city ?: '',
+            $customer->birth_date ? date('d.m.Y', strtotime($customer->birth_date)) : '',
+            $customer->occupation ?: '',
+            $customer->notes ?: '',
+            $customer->representative_name ?: '',
+            $customer->team_name ?: '',
+            $customer->created_at ? date('d.m.Y H:i', strtotime($customer->created_at)) : ''
+        ];
+        fputcsv($output, $row);
+    }
+    
+    fclose($output);
+    exit;
+}
+
+function export_policies_pdf($policies) {
+    // Clear any previous output
+    ob_clean();
+    
+    // Set headers for PDF download
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.pdf"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    // Generate simple PDF content using basic PDF structure
+    generate_simple_pdf_content('Poliçe Listesi', $policies, 'policies');
+}
+
+function export_customers_pdf($customers) {
+    // Clear any previous output
+    ob_clean();
+    
+    // Set headers for PDF download
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.pdf"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    // Generate simple PDF content using basic PDF structure
+    generate_simple_pdf_content('Müşteri Listesi', $customers, 'customers');
+}
+
+// Function to convert Turkish characters to ASCII for PDF compatibility
+function convert_turkish_chars_for_pdf($text) {
+    $turkish_chars = array(
+        'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u',
+        'Ç' => 'C', 'Ğ' => 'G', 'İ' => 'I', 'Ö' => 'O', 'Ş' => 'S', 'Ü' => 'U'
+    );
+    return str_replace(array_keys($turkish_chars), array_values($turkish_chars), $text);
+}
+
+// Enhanced PDF generation function with multi-page support and Turkish character compatibility
+function generate_simple_pdf_content($title, $data, $type) {
+    // Create a comprehensive PDF structure with landscape orientation and multi-page support
+    $pdf_content = "%PDF-1.4\n";
+    
+    // Calculate total pages needed with optimized items per page for consistent layout
+    $items_per_page = 25; // Reduced to ensure consistent layout across all pages
+    $total_pages = max(1, ceil(count($data) / $items_per_page));
+    
+    // Objects
+    $objects = [];
+    $current_obj = 1;
+    
+    // Catalog
+    $objects[$current_obj] = "1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n";
+    $current_obj++;
+    
+    // Pages object - will contain all page references
+    $page_kids = [];
+    for ($i = 0; $i < $total_pages; $i++) {
+        $page_kids[] = ($current_obj + 1 + $i) . " 0 R";
+    }
+    $objects[$current_obj] = "2 0 obj\n<<\n/Type /Pages\n/Kids [" . implode(" ", $page_kids) . "]\n/Count $total_pages\n>>\nendobj\n";
+    $current_obj++;
+    
+    // Generate each page with consistent formatting
+    $content_objects = [];
+    for ($page_num = 0; $page_num < $total_pages; $page_num++) {
+        $page_obj_id = $current_obj;
+        $content_obj_id = $current_obj + $total_pages;
+        
+        // Page object - LANDSCAPE orientation (842 x 595)
+        $objects[$current_obj] = "$page_obj_id 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 842 595]\n/Contents $content_obj_id 0 R\n/Resources <<\n/Font <<\n/F1 " . ($current_obj + 2 * $total_pages) . " 0 R\n/F2 " . ($current_obj + 2 * $total_pages + 1) . " 0 R\n>>\n>>\n>>\nendobj\n";
+        $current_obj++;
+        
+        // Prepare content for this page
+        $start_index = $page_num * $items_per_page;
+        $end_index = min($start_index + $items_per_page, count($data));
+        $page_data = array_slice($data, $start_index, $end_index - $start_index);
+        
+        // Content for this page with absolute positioning for consistency
+        $content = "BT\n";
+        
+        // Title with absolute positioning and consistent size
+        $content .= "/F2 16 Tf\n"; // Bold font for title, consistent size
+        $content .= "1 0 0 1 50 560 Tm\n"; // Absolute positioning for title (x=50, y=560)
+        $title_converted = convert_turkish_chars_for_pdf($title);
+        $content .= "(" . addslashes($title_converted) . ") Tj\n";
+        
+        // Report info with absolute positioning
+        $content .= "/F1 10 Tf\n"; // Regular font
+        $content .= "1 0 0 1 50 540 Tm\n"; // Absolute position (x=50, y=540)
+        $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
+        $content .= "1 0 0 1 50 528 Tm\n"; // Absolute position (x=50, y=528)
+        $content .= "(Toplam Kayit: " . count($data) . " | Sayfa: " . ($page_num + 1) . "/" . $total_pages . ") Tj\n";
+        
+        // Table headers with absolute positioning and consistent design
+        $content .= "/F2 9 Tf\n"; // Bold smaller font for headers, consistent size
+        $content .= "1 0 0 1 50 503 Tm\n"; // Absolute position for headers (x=50, y=503)
+        
+        if ($type === 'customers') {
+            $content .= "(ID    Ad Soyad                          TC/VKN             Telefon           Email                        Sirket/Meslek                Temsilci) Tj\n";
+        } else {
+            $content .= "(ID    Musteri                           Police No          Tur                Sirket                 Prim          Baslangic       Bitis           Temsilci) Tj\n";
+        }
+        
+        $content .= "1 0 0 1 50 491 Tm\n"; // Absolute position for separator line
+        $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
+        
+        // Add data rows with consistent absolute positioning for each page
+        $start_y = 470; // Fixed starting Y position for data rows
+        $row_spacing = 14; // Fixed spacing between rows
+        $current_y = $start_y;
+        
+        foreach ($page_data as $item) {
+            $content .= "/F1 8 Tf\n"; // Consistent data font size
+            $content .= "1 0 0 1 50 $current_y Tm\n"; // Absolute position for each row
+            
+            if ($type === 'customers') {
+                // Customer data display with consistent formatting
+                $first_name = convert_turkish_chars_for_pdf($item->first_name ?? '');
+                $last_name = convert_turkish_chars_for_pdf($item->last_name ?? '');
+                $company_name = convert_turkish_chars_for_pdf($item->company_name ?? '');
+                $occupation = convert_turkish_chars_for_pdf($item->occupation ?? '');
+                $rep_name = convert_turkish_chars_for_pdf($item->representative_name ?? '');
+                
+                $line = sprintf("%-4s %-32s %-18s %-17s %-28s %-28s %s",
+                    substr($item->id ?? '', 0, 4),
+                    substr($first_name . ' ' . $last_name, 0, 32),
+                    substr($item->tc_identity ?? $item->tax_number ?? '', 0, 18),
+                    substr($item->phone ?? '', 0, 17),
+                    substr($item->email ?? '', 0, 28),
+                    substr($company_name ?: $occupation, 0, 28),
+                    substr($rep_name, 0, 18)
+                );
+            } else {
+                // Policy data display with consistent formatting
+                $first_name = convert_turkish_chars_for_pdf($item->first_name ?? '');
+                $last_name = convert_turkish_chars_for_pdf($item->last_name ?? '');
+                $policy_type = convert_turkish_chars_for_pdf($item->policy_type ?? '');
+                $insurance_company = convert_turkish_chars_for_pdf($item->insurance_company ?? '');
+                $rep_name = convert_turkish_chars_for_pdf($item->representative_name ?? '');
+                
+                $line = sprintf("%-4s %-33s %-18s %-18s %-22s %-13s %-15s %-15s %s",
+                    substr($item->id ?? '', 0, 4),
+                    substr($first_name . ' ' . $last_name, 0, 33),
+                    substr($item->policy_number ?? '', 0, 18),
+                    substr($policy_type, 0, 18),
+                    substr($insurance_company, 0, 22),
+                    substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 13),
+                    substr($item->start_date ? date('d.m.Y', strtotime($item->start_date)) : '', 0, 15),
+                    substr($item->end_date ? date('d.m.Y', strtotime($item->end_date)) : '', 0, 15),
+                    substr($rep_name, 0, 18)
+                );
+            }
+            
+            $content .= "(" . addslashes($line) . ") Tj\n";
+            $current_y -= $row_spacing; // Use fixed spacing for consistent layout
+        }
+        
+        $content .= "ET\n";
+        
+        // Store content object for later
+        $content_objects[$content_obj_id] = $content;
+    }
+    
+    // Add content objects
+    foreach ($content_objects as $content_obj_id => $content) {
+        $objects[$content_obj_id] = "$content_obj_id 0 obj\n<<\n/Length " . strlen($content) . "\n>>\nstream\n$content\nendstream\nendobj\n";
+    }
+    
+    // Update current_obj to point to font objects
+    $current_obj = max(array_keys($objects)) + 1;
+    
+    // Regular font
+    $objects[$current_obj] = "$current_obj 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier\n>>\nendobj\n";
+    $current_obj++;
+    
+    // Bold font
+    $objects[$current_obj] = "$current_obj 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier-Bold\n>>\nendobj\n";
+    
+    // Combine all objects
+    $pdf_content .= implode('', $objects);
+    
+    // Build xref table
+    $xref_offset = strlen($pdf_content);
+    $pdf_content .= "xref\n";
+    $pdf_content .= "0 " . (count($objects) + 1) . "\n";
+    $pdf_content .= "0000000000 65535 f \n";
+    
+    $offset = 9; // Start after %PDF-1.4\n
+    foreach ($objects as $obj) {
+        $pdf_content .= sprintf("%010d 00000 n \n", $offset);
+        $offset += strlen($obj);
+    }
+    
+    // Trailer
+    $pdf_content .= "trailer\n";
+    $pdf_content .= "<<\n";
+    $pdf_content .= "/Size " . (count($objects) + 1) . "\n";
+    $pdf_content .= "/Root 1 0 R\n";
+    $pdf_content .= ">>\n";
+    $pdf_content .= "startxref\n";
+    $pdf_content .= "$xref_offset\n";
+    $pdf_content .= "%%EOF";
+    
+    echo $pdf_content;
+    exit;
+}
