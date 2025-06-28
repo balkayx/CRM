@@ -19,225 +19,32 @@ $customers_table = $wpdb->prefix . 'insurance_crm_customers';
 $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
 $users_table = $wpdb->users;
 
-// Early export handling - Before any output
-if (isset($_POST['export']) && isset($_POST['export_nonce']) && wp_verify_nonce($_POST['export_nonce'], 'export_policies_data')) {
-    
-    // Check permissions first - define basic function if not already defined
-    if (!function_exists('can_export_data')) {
-        function can_export_data($user_id = null) {
-            global $wpdb;
-            $user_id = $user_id ?: get_current_user_id();
-            
-            $rep = $wpdb->get_row($wpdb->prepare(
-                "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
-                $user_id
-            ));
-            
-            if (!$rep) {
-                return false;
-            }
-            
-            $role_id = intval($rep->role);
-            
-            // Patron (role 1) and Müdür (role 2) have all permissions including export
-            if ($role_id === 1 || $role_id === 2) {
-                return true;
-            }
-            
-            // For other roles, check individual export_data permission
-            $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
-            
-            return $export_permission === 1;
-        }
-    }
-    
-    if (!can_export_data()) {
-        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
-    }
-    
-    $export_format = sanitize_text_field($_POST['export']);
-    $export_type = sanitize_text_field($_POST['export_type']);
-    
-    if ($export_type === 'policies' && in_array($export_format, ['csv', 'pdf'])) {
+// Define permission checking function if not already defined globally
+if (!function_exists('can_export_data')) {
+    function can_export_data($user_id = null) {
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
         
-        // Get filters from POST data
-        $export_filters = [
-            'policy_number' => sanitize_text_field($_POST['policy_number'] ?? ''),
-            'policy_number_search' => sanitize_text_field($_POST['policy_number_search'] ?? ''),
-            'customer_id' => (int) ($_POST['customer_id'] ?? 0),
-            'representative_id_filter' => (int) ($_POST['representative_id_filter'] ?? 0),
-            'policy_type' => sanitize_text_field($_POST['policy_type'] ?? ''),
-            'insurance_company' => sanitize_text_field($_POST['insurance_company'] ?? ''),
-            'status' => sanitize_text_field($_POST['status'] ?? ''),
-            'insured_party' => sanitize_text_field($_POST['insured_party'] ?? ''),
-            'start_date' => sanitize_text_field($_POST['start_date'] ?? ''),
-            'end_date' => sanitize_text_field($_POST['end_date'] ?? ''),
-            'date_range' => sanitize_text_field($_POST['date_range'] ?? ''),
-            'policy_category' => sanitize_text_field($_POST['policy_category'] ?? ''),
-            'network' => sanitize_text_field($_POST['network'] ?? ''),
-            'payment_info' => sanitize_text_field($_POST['payment_info'] ?? ''),
-            'status_note' => sanitize_text_field($_POST['status_note'] ?? ''),
-            'expiring_soon' => isset($_POST['expiring_soon']) ? '1' : '',
-            'show_passive' => isset($_POST['show_passive']) ? '1' : '',
-            'show_cancelled' => isset($_POST['show_cancelled']) ? '1' : '',
-            'cancellation_reason' => sanitize_text_field($_POST['cancellation_reason'] ?? ''),
-            'include_passive_dates' => isset($_POST['include_passive_dates']) ? '1' : '',
-            'quick_filter' => sanitize_text_field($_POST['quick_filter'] ?? ''),
-        ];
+        $rep = $wpdb->get_row($wpdb->prepare(
+            "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            $user_id
+        ));
         
-        try {
-            // Build query manually for export (simplified version)
-            $where_conditions = [];
-            $query_params = [];
-            
-            // Base conditions
-            $where_conditions[] = "p.deleted_at IS NULL";
-            
-            // Apply filters
-            if (!empty($export_filters['policy_number'])) {
-                $where_conditions[] = "p.policy_number LIKE %s";
-                $query_params[] = '%' . $export_filters['policy_number'] . '%';
-            }
-            
-            if (!empty($export_filters['policy_type'])) {
-                $where_conditions[] = "p.policy_type = %s";
-                $query_params[] = $export_filters['policy_type'];
-            }
-            
-            if (!empty($export_filters['insurance_company'])) {
-                $where_conditions[] = "p.insurance_company = %s";
-                $query_params[] = $export_filters['insurance_company'];
-            }
-            
-            if (!empty($export_filters['status'])) {
-                $where_conditions[] = "p.status = %s";
-                $query_params[] = $export_filters['status'];
-            }
-            
-            $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
-            
-            $query = "
-                SELECT p.*, 
-                       CONCAT(c.first_name, ' ', c.last_name) as customer_name,
-                       c.first_name, c.last_name, c.tc_identity, c.tax_number,
-                       u.display_name as representative_name
-                FROM {$wpdb->prefix}insurance_crm_policies p
-                LEFT JOIN {$wpdb->prefix}insurance_crm_customers c ON p.customer_id = c.id
-                LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON p.representative_id = r.id
-                LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
-                $where_clause
-                ORDER BY p.created_at DESC
-            ";
-            
-            if (!empty($query_params)) {
-                $export_policies = $wpdb->get_results($wpdb->prepare($query, ...$query_params));
-            } else {
-                $export_policies = $wpdb->get_results($query);
-            }
-            
-            if ($export_format === 'csv') {
-                // Export to CSV
-                header('Content-Type: text/csv; charset=utf-8');
-                header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.csv"');
-                
-                $output = fopen('php://output', 'w');
-                
-                // Add BOM for UTF-8
-                fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-                
-                // CSV Headers
-                $headers = [
-                    'ID', 'Müşteri Adı', 'TC/VKN', 'Poliçe No', 'Poliçe Türü', 'Sigorta Şirketi',
-                    'Başlangıç Tarihi', 'Bitiş Tarihi', 'Prim Tutarı', 'Durum', 'Kategori',
-                    'Temsilci', 'Oluşturulma Tarihi'
-                ];
-                fputcsv($output, $headers);
-                
-                // CSV Data
-                foreach ($export_policies as $policy) {
-                    $row = [
-                        $policy->id,
-                        ($policy->first_name ?? '') . ' ' . ($policy->last_name ?? ''),
-                        $policy->tc_identity ?: $policy->tax_number ?: '',
-                        $policy->policy_number ?: '',
-                        $policy->policy_type ?: '',
-                        $policy->insurance_company ?: '',
-                        $policy->start_date ? date('d.m.Y', strtotime($policy->start_date)) : '',
-                        $policy->end_date ? date('d.m.Y', strtotime($policy->end_date)) : '',
-                        $policy->premium_amount ? number_format($policy->premium_amount, 2) : '0',
-                        $policy->status ?: '',
-                        $policy->policy_category ?: '',
-                        $policy->representative_name ?: '',
-                        $policy->created_at ? date('d.m.Y H:i', strtotime($policy->created_at)) : ''
-                    ];
-                    fputcsv($output, $row);
-                }
-                
-                fclose($output);
-                exit;
-                
-            } elseif ($export_format === 'pdf') {
-                // Simple PDF export (HTML to PDF conversion)
-                header('Content-Type: text/html; charset=utf-8');
-                header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.html"');
-                
-                // Create a simple HTML for PDF conversion
-                $html = '<!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Poliçe Listesi - ' . date('d.m.Y') . '</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; font-size: 12px; }
-                        table { border-collapse: collapse; width: 100%; }
-                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                        th { background-color: #f2f2f2; font-weight: bold; }
-                        .header { text-align: center; margin-bottom: 20px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h2>Poliçe Listesi</h2>
-                        <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
-                        <p>Toplam Kayıt: ' . count($export_policies) . '</p>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Müşteri</th>
-                                <th>Poliçe No</th>
-                                <th>Tür</th>
-                                <th>Şirket</th>
-                                <th>Başlangıç</th>
-                                <th>Bitiş</th>
-                                <th>Prim</th>
-                                <th>Durum</th>
-                            </tr>
-                        </thead>
-                        <tbody>';
-                
-                foreach ($export_policies as $policy) {
-                    $html .= '<tr>
-                        <td>' . esc_html(($policy->first_name ?? '') . ' ' . ($policy->last_name ?? '')) . '</td>
-                        <td>' . esc_html($policy->policy_number ?? '') . '</td>
-                        <td>' . esc_html($policy->policy_type ?? '') . '</td>
-                        <td>' . esc_html($policy->insurance_company ?? '') . '</td>
-                        <td>' . ($policy->start_date ? date('d.m.Y', strtotime($policy->start_date)) : '') . '</td>
-                        <td>' . ($policy->end_date ? date('d.m.Y', strtotime($policy->end_date)) : '') . '</td>
-                        <td>' . ($policy->premium_amount ? number_format($policy->premium_amount, 2) . ' ₺' : '0 ₺') . '</td>
-                        <td>' . esc_html($policy->status ?? '') . '</td>
-                    </tr>';
-                }
-                
-                $html .= '</tbody></table></body></html>';
-                
-                // Output HTML for browser's print to PDF functionality
-                echo $html;
-                exit;
-            }
-        } catch (Exception $e) {
-            wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+        if (!$rep) {
+            return false;
         }
+        
+        $role_id = intval($rep->role);
+        
+        // Patron (role 1) and Müdür (role 2) have all permissions including export
+        if ($role_id === 1 || $role_id === 2) {
+            return true;
+        }
+        
+        // For other roles, check individual export_data permission
+        $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+        
+        return $export_permission === 1;
     }
 }
 
@@ -6015,7 +5822,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('💡 Press F1 for keyboard shortcuts help');
 });
 
-// Export functionality for policies
+// Export functionality for policies - AJAX based
 function exportPoliciesData(format) {
     // Show loading indicator
     const loadingHtml = `
@@ -6041,52 +5848,86 @@ function exportPoliciesData(format) {
         }
     });
 
-    // Get current page URL parameters to maintain filters
+    // Get current filters from the form or URL
     const urlParams = new URLSearchParams(window.location.search);
-    urlParams.set('export', format);
-    urlParams.set('export_type', 'policies');
     
-    // Create form to submit with current filters
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = window.location.pathname;
-    form.style.display = 'none';
+    // Prepare data for AJAX request
+    const formData = new FormData();
+    formData.append('action', 'export_policies_data');
+    formData.append('format', format);
+    formData.append('nonce', '<?php echo wp_create_nonce("export_policies_data"); ?>');
     
-    // Add all current URL parameters as hidden inputs
+    // Add current filters to maintain the same view
     for (const [key, value] of urlParams.entries()) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = value;
-        form.appendChild(input);
+        if (key !== 'action' && key !== 'id') {
+            formData.append(key, value);
+        }
     }
     
-    // Add nonce for security
-    const nonceInput = document.createElement('input');
-    nonceInput.type = 'hidden';
-    nonceInput.name = 'export_nonce';
-    nonceInput.value = '<?php echo wp_create_nonce("export_policies_data"); ?>';
-    form.appendChild(nonceInput);
+    // Use XMLHttpRequest for file download
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '<?php echo admin_url("admin-ajax.php"); ?>', true);
+    xhr.responseType = 'blob';
     
-    document.body.appendChild(form);
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            // Create blob and download
+            const blob = new Blob([xhr.response], { 
+                type: format === 'csv' ? 'text/csv' : 'text/html' 
+            });
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            
+            // Get filename from content-disposition header or generate one
+            const disposition = xhr.getResponseHeader('Content-Disposition');
+            let filename = 'policies_' + new Date().toISOString().slice(0,19).replace(/:/g, '-');
+            if (disposition && disposition.indexOf('filename=') !== -1) {
+                filename = disposition.split('filename=')[1].replace(/"/g, '');
+            } else {
+                filename += format === 'csv' ? '.csv' : '.html';
+            }
+            
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            Swal.close();
+            Swal.fire({
+                icon: 'success',
+                title: 'Başarılı!',
+                text: format.toUpperCase() + ' dosyası indirildi.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } else {
+            Swal.close();
+            Swal.fire({
+                icon: 'error',
+                title: 'Hata!',
+                text: 'Export sırasında bir hata oluştu.',
+                timer: 3000,
+                showConfirmButton: false
+            });
+        }
+    };
     
-    // Submit form and handle response
-    form.submit();
-    
-    // Close loading after a delay (form submission will handle the download)
-    setTimeout(() => {
+    xhr.onerror = function() {
         Swal.close();
-        
         Swal.fire({
-            icon: 'success',
-            title: 'Başarılı!',
-            text: format.toUpperCase() + ' dosyası indirilmeye başladı.',
-            timer: 2000,
+            icon: 'error',
+            title: 'Hata!',
+            text: 'Bağlantı hatası oluştu.',
+            timer: 3000,
             showConfirmButton: false
         });
-        
-        document.body.removeChild(form);
-    }, 1000);
+    };
+    
+    xhr.send(formData);
 }
 </script>
 

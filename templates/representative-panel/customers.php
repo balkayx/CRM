@@ -23,206 +23,32 @@ $representatives_table = $wpdb->prefix . 'insurance_crm_representatives';
 $teams_table = $wpdb->prefix . 'insurance_crm_teams';
 $users_table = $wpdb->users;
 
-// Early export handling - Before any output
-if (isset($_POST['export']) && isset($_POST['export_nonce']) && wp_verify_nonce($_POST['export_nonce'], 'export_customers_data')) {
-    
-    // Check permissions first - define basic function if not already defined
-    if (!function_exists('can_export_data')) {
-        function can_export_data($user_id = null) {
-            global $wpdb;
-            $user_id = $user_id ?: get_current_user_id();
-            
-            $rep = $wpdb->get_row($wpdb->prepare(
-                "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
-                $user_id
-            ));
-            
-            if (!$rep) {
-                return false;
-            }
-            
-            $role_id = intval($rep->role);
-            
-            // Patron (role 1) and Müdür (role 2) have all permissions including export
-            if ($role_id === 1 || $role_id === 2) {
-                return true;
-            }
-            
-            // For other roles, check individual export_data permission
-            $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
-            
-            return $export_permission === 1;
+// Define permission checking function if not already defined globally
+if (!function_exists('can_export_data')) {
+    function can_export_data($user_id = null) {
+        global $wpdb;
+        $user_id = $user_id ?: get_current_user_id();
+        
+        $rep = $wpdb->get_row($wpdb->prepare(
+            "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+            $user_id
+        ));
+        
+        if (!$rep) {
+            return false;
         }
-    }
-    
-    if (!can_export_data()) {
-        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
-    }
-    
-    $export_format = sanitize_text_field($_POST['export']);
-    $export_type = sanitize_text_field($_POST['export_type']);
-    
-    if ($export_type === 'customers' && in_array($export_format, ['csv', 'pdf'])) {
-        try {
-            // Get filters from POST data
-            $search = sanitize_text_field($_POST['search'] ?? '');
-            $filter_status = sanitize_text_field($_POST['filter_status'] ?? '');
-            $filter_category = sanitize_text_field($_POST['filter_category'] ?? '');
-            $filter_representative = (int) ($_POST['filter_representative'] ?? 0);
-            
-            // Build query manually for export
-            $where_conditions = [];
-            $query_params = [];
-            
-            // Base conditions
-            $where_conditions[] = "c.deleted_at IS NULL";
-            
-            // Apply filters
-            if (!empty($search)) {
-                $where_conditions[] = "(c.first_name LIKE %s OR c.last_name LIKE %s OR c.phone LIKE %s OR c.email LIKE %s OR c.tc_identity LIKE %s OR c.tax_number LIKE %s)";
-                $search_term = '%' . $search . '%';
-                $query_params = array_merge($query_params, [$search_term, $search_term, $search_term, $search_term, $search_term, $search_term]);
-            }
-            
-            if (!empty($filter_status)) {
-                $where_conditions[] = "c.status = %s";
-                $query_params[] = $filter_status;
-            }
-            
-            if (!empty($filter_category)) {
-                $where_conditions[] = "c.category = %s";
-                $query_params[] = $filter_category;
-            }
-            
-            if ($filter_representative > 0) {
-                $where_conditions[] = "c.representative_id = %d";
-                $query_params[] = $filter_representative;
-            }
-            
-            $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
-            
-            $query = "
-                SELECT c.*, CONCAT(c.first_name, ' ', c.last_name) AS customer_name, 
-                       u.display_name as representative_name, 
-                       fu.display_name as first_registrar_name
-                FROM {$wpdb->prefix}insurance_crm_customers c
-                LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON c.representative_id = r.id
-                LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
-                LEFT JOIN {$wpdb->users} fu ON c.first_registrar_id = fu.ID
-                $where_clause
-                ORDER BY c.created_at DESC
-            ";
-            
-            if (!empty($query_params)) {
-                $export_customers = $wpdb->get_results($wpdb->prepare($query, ...$query_params));
-            } else {
-                $export_customers = $wpdb->get_results($query);
-            }
-            
-            if ($export_format === 'csv') {
-                // Export to CSV
-                header('Content-Type: text/csv; charset=utf-8');
-                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.csv"');
-                
-                $output = fopen('php://output', 'w');
-                
-                // Add BOM for UTF-8
-                fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
-                
-                // CSV Headers
-                $headers = [
-                    'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Telefon', 'E-posta', 
-                    'Adres', 'Şirket', 'Cinsiyet', 'Doğum Tarihi', 'Kategori', 'Durum',
-                    'Temsilci', 'İlk Kayıt Eden', 'Oluşturulma Tarihi'
-                ];
-                fputcsv($output, $headers);
-                
-                // CSV Data
-                foreach ($export_customers as $customer) {
-                    $row = [
-                        $customer->id ?? '',
-                        $customer->first_name ?? '',
-                        $customer->last_name ?? '',
-                        $customer->tc_identity ?? '',
-                        $customer->tax_number ?? '',
-                        $customer->phone ?? '',
-                        $customer->email ?? '',
-                        $customer->address ?? '',
-                        $customer->company_name ?? '',
-                        $customer->gender ?? '',
-                        $customer->birth_date ? date('d.m.Y', strtotime($customer->birth_date)) : '',
-                        $customer->category ?? '',
-                        $customer->status ?? '',
-                        $customer->representative_name ?? '',
-                        $customer->first_registrar_name ?? '',
-                        $customer->created_at ? date('d.m.Y H:i', strtotime($customer->created_at)) : ''
-                    ];
-                    fputcsv($output, $row);
-                }
-                
-                fclose($output);
-                exit;
-                
-            } elseif ($export_format === 'pdf') {
-                // Simple PDF export (HTML to PDF conversion)
-                header('Content-Type: text/html; charset=utf-8');
-                header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.html"');
-                
-                // Create a simple HTML for PDF conversion
-                $html = '<!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Müşteri Listesi - ' . date('d.m.Y') . '</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; font-size: 12px; }
-                        table { border-collapse: collapse; width: 100%; }
-                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                        th { background-color: #f2f2f2; font-weight: bold; }
-                        .header { text-align: center; margin-bottom: 20px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <h2>Müşteri Listesi</h2>
-                        <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
-                        <p>Toplam Kayıt: ' . count($export_customers) . '</p>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Ad Soyad</th>
-                                <th>TC/VKN</th>
-                                <th>Telefon</th>
-                                <th>E-posta</th>
-                                <th>Kategori</th>
-                                <th>Durum</th>
-                                <th>Temsilci</th>
-                            </tr>
-                        </thead>
-                        <tbody>';
-                
-                foreach ($export_customers as $customer) {
-                    $html .= '<tr>
-                        <td>' . esc_html(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? '')) . '</td>
-                        <td>' . esc_html($customer->tc_identity ?: $customer->tax_number ?: '') . '</td>
-                        <td>' . esc_html($customer->phone ?? '') . '</td>
-                        <td>' . esc_html($customer->email ?? '') . '</td>
-                        <td>' . esc_html($customer->category ?? '') . '</td>
-                        <td>' . esc_html($customer->status ?? '') . '</td>
-                        <td>' . esc_html($customer->representative_name ?? '') . '</td>
-                    </tr>';
-                }
-                
-                $html .= '</tbody></table></body></html>';
-                
-                // Output HTML for browser's print to PDF functionality
-                echo $html;
-                exit;
-            }
-        } catch (Exception $e) {
-            wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+        
+        $role_id = intval($rep->role);
+        
+        // Patron (role 1) and Müdür (role 2) have all permissions including export
+        if ($role_id === 1 || $role_id === 2) {
+            return true;
         }
+        
+        // For other roles, check individual export_data permission
+        $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+        
+        return $export_permission === 1;
     }
 }
 
@@ -4646,6 +4472,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Export functionality for customers
+// Export functionality for customers - AJAX based
 function exportCustomersData(format) {
     // Show loading indicator
     const loadingHtml = `
@@ -4671,52 +4498,86 @@ function exportCustomersData(format) {
         }
     });
 
-    // Get current page URL parameters to maintain filters
+    // Get current filters from the form or URL
     const urlParams = new URLSearchParams(window.location.search);
-    urlParams.set('export', format);
-    urlParams.set('export_type', 'customers');
     
-    // Create form to submit with current filters
-    const form = document.createElement('form');
-    form.method = 'POST';
-    form.action = window.location.pathname;
-    form.style.display = 'none';
+    // Prepare data for AJAX request
+    const formData = new FormData();
+    formData.append('action', 'export_customers_data');
+    formData.append('format', format);
+    formData.append('nonce', '<?php echo wp_create_nonce("export_customers_data"); ?>');
     
-    // Add all current URL parameters as hidden inputs
+    // Add current filters to maintain the same view
     for (const [key, value] of urlParams.entries()) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = key;
-        input.value = value;
-        form.appendChild(input);
+        if (key !== 'action' && key !== 'id') {
+            formData.append(key, value);
+        }
     }
     
-    // Add nonce for security
-    const nonceInput = document.createElement('input');
-    nonceInput.type = 'hidden';
-    nonceInput.name = 'export_nonce';
-    nonceInput.value = '<?php echo wp_create_nonce("export_customers_data"); ?>';
-    form.appendChild(nonceInput);
+    // Use XMLHttpRequest for file download
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '<?php echo admin_url("admin-ajax.php"); ?>', true);
+    xhr.responseType = 'blob';
     
-    document.body.appendChild(form);
+    xhr.onload = function() {
+        if (xhr.status === 200) {
+            // Create blob and download
+            const blob = new Blob([xhr.response], { 
+                type: format === 'csv' ? 'text/csv' : 'text/html' 
+            });
+            
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            
+            // Get filename from content-disposition header or generate one
+            const disposition = xhr.getResponseHeader('Content-Disposition');
+            let filename = 'customers_' + new Date().toISOString().slice(0,19).replace(/:/g, '-');
+            if (disposition && disposition.indexOf('filename=') !== -1) {
+                filename = disposition.split('filename=')[1].replace(/"/g, '');
+            } else {
+                filename += format === 'csv' ? '.csv' : '.html';
+            }
+            
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            Swal.close();
+            Swal.fire({
+                icon: 'success',
+                title: 'Başarılı!',
+                text: format.toUpperCase() + ' dosyası indirildi.',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        } else {
+            Swal.close();
+            Swal.fire({
+                icon: 'error',
+                title: 'Hata!',
+                text: 'Export sırasında bir hata oluştu.',
+                timer: 3000,
+                showConfirmButton: false
+            });
+        }
+    };
     
-    // Submit form and handle response
-    form.submit();
-    
-    // Close loading after a delay (form submission will handle the download)
-    setTimeout(() => {
+    xhr.onerror = function() {
         Swal.close();
-        
         Swal.fire({
-            icon: 'success',
-            title: 'Başarılı!',
-            text: format.toUpperCase() + ' dosyası indirilmeye başladı.',
-            timer: 2000,
+            icon: 'error',
+            title: 'Hata!',
+            text: 'Bağlantı hatası oluştu.',
+            timer: 3000,
             showConfirmButton: false
         });
-        
-        document.body.removeChild(form);
-    }, 1000);
+    };
+    
+    xhr.send(formData);
 }
 </script>
 

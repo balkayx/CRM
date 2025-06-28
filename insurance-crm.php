@@ -2787,4 +2787,389 @@ function handle_toggle_representative_status() {
         wp_send_json_error(array('message' => 'Güncelleme sırasında bir hata oluştu: ' . $wpdb->last_error));
     }
 }
+
+/**
+ * Export AJAX Handlers
+ */
+add_action('wp_ajax_export_policies_data', 'handle_export_policies_data');
+add_action('wp_ajax_export_customers_data', 'handle_export_customers_data');
+
+function handle_export_policies_data() {
+    // Check nonce for security
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'export_policies_data')) {
+        wp_die('Security check failed');
+    }
+    
+    // Check permissions
+    if (!can_export_data()) {
+        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
+    }
+    
+    $export_format = sanitize_text_field($_POST['format'] ?? '');
+    
+    if (!in_array($export_format, ['csv', 'pdf'])) {
+        wp_die('Geçersiz export formatı');
+    }
+    
+    try {
+        export_policies_data($export_format, $_POST);
+    } catch (Exception $e) {
+        wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+    }
+}
+
+function handle_export_customers_data() {
+    // Check nonce for security
+    if (!wp_verify_nonce($_POST['nonce'] ?? '', 'export_customers_data')) {
+        wp_die('Security check failed');
+    }
+    
+    // Check permissions
+    if (!can_export_data()) {
+        wp_die('Bu işlem için yetkiniz bulunmamaktadır.');
+    }
+    
+    $export_format = sanitize_text_field($_POST['format'] ?? '');
+    
+    if (!in_array($export_format, ['csv', 'pdf'])) {
+        wp_die('Geçersiz export formatı');
+    }
+    
+    try {
+        export_customers_data($export_format, $_POST);
+    } catch (Exception $e) {
+        wp_die('Export sırasında hata oluştu: ' . esc_html($e->getMessage()));
+    }
+}
+
+// Permission checking function (used by both exports)
+function can_export_data($user_id = null) {
+    global $wpdb;
+    $user_id = $user_id ?: get_current_user_id();
+    
+    $rep = $wpdb->get_row($wpdb->prepare(
+        "SELECT role, export_data FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+        $user_id
+    ));
+    
+    if (!$rep) {
+        return false;
+    }
+    
+    $role_id = intval($rep->role);
+    
+    // Patron (role 1) and Müdür (role 2) have all permissions including export
+    if ($role_id === 1 || $role_id === 2) {
+        return true;
+    }
+    
+    // For other roles, check individual export_data permission
+    $export_permission = isset($rep->export_data) ? intval($rep->export_data) : 0;
+    
+    return $export_permission === 1;
+}
+
+// Export functions
+function export_policies_data($format, $filters) {
+    global $wpdb;
+    
+    // Build the query with filters
+    $where_conditions = ["p.deleted_at IS NULL"];
+    $query_params = [];
+    
+    // Apply filters (simplified version)
+    if (!empty($filters['policy_number'])) {
+        $where_conditions[] = "p.policy_number LIKE %s";
+        $query_params[] = '%' . sanitize_text_field($filters['policy_number']) . '%';
+    }
+    
+    if (!empty($filters['policy_type'])) {
+        $where_conditions[] = "p.policy_type = %s";
+        $query_params[] = sanitize_text_field($filters['policy_type']);
+    }
+    
+    if (!empty($filters['insurance_company'])) {
+        $where_conditions[] = "p.insurance_company = %s";
+        $query_params[] = sanitize_text_field($filters['insurance_company']);
+    }
+    
+    if (!empty($filters['status'])) {
+        $where_conditions[] = "p.status = %s";
+        $query_params[] = sanitize_text_field($filters['status']);
+    }
+    
+    $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
+    
+    $query = "
+        SELECT p.*, 
+               CONCAT(c.first_name, ' ', c.last_name) as customer_name,
+               c.first_name, c.last_name, c.tc_identity, c.tax_number,
+               u.display_name as representative_name
+        FROM {$wpdb->prefix}insurance_crm_policies p
+        LEFT JOIN {$wpdb->prefix}insurance_crm_customers c ON p.customer_id = c.id
+        LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON p.representative_id = r.id
+        LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
+        $where_clause
+        ORDER BY p.created_at DESC
+    ";
+    
+    if (!empty($query_params)) {
+        $policies = $wpdb->get_results($wpdb->prepare($query, ...$query_params));
+    } else {
+        $policies = $wpdb->get_results($query);
+    }
+    
+    if ($format === 'csv') {
+        export_policies_csv($policies);
+    } elseif ($format === 'pdf') {
+        export_policies_pdf($policies);
+    }
+}
+
+function export_customers_data($format, $filters) {
+    global $wpdb;
+    
+    // Build the query with filters
+    $where_conditions = ["c.deleted_at IS NULL"];
+    $query_params = [];
+    
+    // Apply basic filters
+    if (!empty($filters['customer_search'])) {
+        $search_term = '%' . sanitize_text_field($filters['customer_search']) . '%';
+        $where_conditions[] = "(c.first_name LIKE %s OR c.last_name LIKE %s OR c.tc_identity LIKE %s OR c.tax_number LIKE %s)";
+        $query_params[] = $search_term;
+        $query_params[] = $search_term;
+        $query_params[] = $search_term;
+        $query_params[] = $search_term;
+    }
+    
+    $where_clause = !empty($where_conditions) ? "WHERE " . implode(" AND ", $where_conditions) : "";
+    
+    $query = "
+        SELECT c.*, 
+               u.display_name as representative_name
+        FROM {$wpdb->prefix}insurance_crm_customers c
+        LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON c.representative_id = r.id
+        LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
+        $where_clause
+        ORDER BY c.created_at DESC
+    ";
+    
+    if (!empty($query_params)) {
+        $customers = $wpdb->get_results($wpdb->prepare($query, ...$query_params));
+    } else {
+        $customers = $wpdb->get_results($query);
+    }
+    
+    if ($format === 'csv') {
+        export_customers_csv($customers);
+    } elseif ($format === 'pdf') {
+        export_customers_pdf($customers);
+    }
+}
+
+function export_policies_csv($policies) {
+    // Clear any previous output
+    ob_clean();
+    
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.csv"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    $output = fopen('php://output', 'w');
+    
+    // Add BOM for UTF-8
+    fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+    
+    // CSV Headers
+    $headers = [
+        'ID', 'Müşteri Adı', 'TC/VKN', 'Poliçe No', 'Poliçe Türü', 'Sigorta Şirketi',
+        'Başlangıç Tarihi', 'Bitiş Tarihi', 'Prim Tutarı', 'Durum', 'Kategori',
+        'Temsilci', 'Oluşturulma Tarihi'
+    ];
+    fputcsv($output, $headers);
+    
+    // CSV Data
+    foreach ($policies as $policy) {
+        $row = [
+            $policy->id,
+            ($policy->first_name ?? '') . ' ' . ($policy->last_name ?? ''),
+            $policy->tc_identity ?: $policy->tax_number ?: '',
+            $policy->policy_number ?: '',
+            $policy->policy_type ?: '',
+            $policy->insurance_company ?: '',
+            $policy->start_date ? date('d.m.Y', strtotime($policy->start_date)) : '',
+            $policy->end_date ? date('d.m.Y', strtotime($policy->end_date)) : '',
+            $policy->premium_amount ? number_format($policy->premium_amount, 2) : '0',
+            $policy->status ?: '',
+            $policy->policy_category ?: '',
+            $policy->representative_name ?: '',
+            $policy->created_at ? date('d.m.Y H:i', strtotime($policy->created_at)) : ''
+        ];
+        fputcsv($output, $row);
+    }
+    
+    fclose($output);
+    exit;
+}
+
+function export_customers_csv($customers) {
+    // Clear any previous output
+    ob_clean();
+    
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.csv"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    $output = fopen('php://output', 'w');
+    
+    // Add BOM for UTF-8
+    fprintf($output, chr(0xEF).chr(0xBB).chr(0xBF));
+    
+    // CSV Headers
+    $headers = [
+        'ID', 'Ad', 'Soyad', 'TC Kimlik', 'Vergi No', 'Telefon', 'Email',
+        'Adres', 'Doğum Tarihi', 'Temsilci', 'Oluşturulma Tarihi'
+    ];
+    fputcsv($output, $headers);
+    
+    // CSV Data
+    foreach ($customers as $customer) {
+        $row = [
+            $customer->id,
+            $customer->first_name ?: '',
+            $customer->last_name ?: '',
+            $customer->tc_identity ?: '',
+            $customer->tax_number ?: '',
+            $customer->phone ?: '',
+            $customer->email ?: '',
+            $customer->address ?: '',
+            $customer->birth_date ? date('d.m.Y', strtotime($customer->birth_date)) : '',
+            $customer->representative_name ?: '',
+            $customer->created_at ? date('d.m.Y H:i', strtotime($customer->created_at)) : ''
+        ];
+        fputcsv($output, $row);
+    }
+    
+    fclose($output);
+    exit;
+}
+
+function export_policies_pdf($policies) {
+    // Clear any previous output
+    ob_clean();
+    
+    header('Content-Type: text/html; charset=utf-8');
+    header('Content-Disposition: attachment; filename="policies_' . date('Y-m-d_H-i-s') . '.html"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    // Create HTML for PDF conversion
+    $html = '<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Poliçe Listesi - ' . date('d.m.Y') . '</title>
+        <style>
+            body { font-family: Arial, sans-serif; font-size: 12px; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; font-weight: bold; }
+            .header { text-align: center; margin-bottom: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h2>Poliçe Listesi</h2>
+            <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
+            <p>Toplam Kayıt: ' . count($policies) . '</p>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Müşteri</th>
+                    <th>Poliçe No</th>
+                    <th>Tür</th>
+                    <th>Şirket</th>
+                    <th>Başlangıç</th>
+                    <th>Bitiş</th>
+                    <th>Prim</th>
+                    <th>Durum</th>
+                </tr>
+            </thead>
+            <tbody>';
+    
+    foreach ($policies as $policy) {
+        $html .= '<tr>
+            <td>' . esc_html(($policy->first_name ?? '') . ' ' . ($policy->last_name ?? '')) . '</td>
+            <td>' . esc_html($policy->policy_number ?? '') . '</td>
+            <td>' . esc_html($policy->policy_type ?? '') . '</td>
+            <td>' . esc_html($policy->insurance_company ?? '') . '</td>
+            <td>' . ($policy->start_date ? date('d.m.Y', strtotime($policy->start_date)) : '') . '</td>
+            <td>' . ($policy->end_date ? date('d.m.Y', strtotime($policy->end_date)) : '') . '</td>
+            <td>' . ($policy->premium_amount ? number_format($policy->premium_amount, 2) . ' ₺' : '0 ₺') . '</td>
+            <td>' . esc_html($policy->status ?? '') . '</td>
+        </tr>';
+    }
+    
+    $html .= '</tbody></table></body></html>';
+    
+    echo $html;
+    exit;
+}
+
+function export_customers_pdf($customers) {
+    // Clear any previous output
+    ob_clean();
+    
+    header('Content-Type: text/html; charset=utf-8');
+    header('Content-Disposition: attachment; filename="customers_' . date('Y-m-d_H-i-s') . '.html"');
+    header('Cache-Control: no-cache, must-revalidate');
+    
+    // Create HTML for PDF conversion
+    $html = '<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>Müşteri Listesi - ' . date('d.m.Y') . '</title>
+        <style>
+            body { font-family: Arial, sans-serif; font-size: 12px; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; font-weight: bold; }
+            .header { text-align: center; margin-bottom: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h2>Müşteri Listesi</h2>
+            <p>Rapor Tarihi: ' . date('d.m.Y H:i') . '</p>
+            <p>Toplam Kayıt: ' . count($customers) . '</p>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Ad Soyad</th>
+                    <th>TC/VKN</th>
+                    <th>Telefon</th>
+                    <th>Email</th>
+                    <th>Temsilci</th>
+                </tr>
+            </thead>
+            <tbody>';
+    
+    foreach ($customers as $customer) {
+        $html .= '<tr>
+            <td>' . esc_html(($customer->first_name ?? '') . ' ' . ($customer->last_name ?? '')) . '</td>
+            <td>' . esc_html($customer->tc_identity ?: $customer->tax_number ?: '') . '</td>
+            <td>' . esc_html($customer->phone ?? '') . '</td>
+            <td>' . esc_html($customer->email ?? '') . '</td>
+            <td>' . esc_html($customer->representative_name ?? '') . '</td>
+        </tr>';
+    }
+    
+    $html .= '</tbody></table></body></html>';
+    
+    echo $html;
+    exit;
+}
 ?>
