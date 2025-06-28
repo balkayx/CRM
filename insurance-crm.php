@@ -3051,10 +3051,23 @@ function export_customers_pdf($customers) {
     generate_simple_pdf_content('Müşteri Listesi', $customers, 'customers');
 }
 
-// Simple PDF generation function for fallback
+// Function to convert Turkish characters to ASCII for PDF compatibility
+function convert_turkish_chars_for_pdf($text) {
+    $turkish_chars = array(
+        'ç' => 'c', 'ğ' => 'g', 'ı' => 'i', 'ö' => 'o', 'ş' => 's', 'ü' => 'u',
+        'Ç' => 'C', 'Ğ' => 'G', 'İ' => 'I', 'Ö' => 'O', 'Ş' => 'S', 'Ü' => 'U'
+    );
+    return str_replace(array_keys($turkish_chars), array_values($turkish_chars), $text);
+}
+
+// Enhanced PDF generation function with multi-page support and Turkish character compatibility
 function generate_simple_pdf_content($title, $data, $type) {
-    // Create a more comprehensive PDF structure with landscape orientation
+    // Create a comprehensive PDF structure with landscape orientation and multi-page support
     $pdf_content = "%PDF-1.4\n";
+    
+    // Calculate total pages needed
+    $items_per_page = 30; // Items per page with better spacing
+    $total_pages = max(1, ceil(count($data) / $items_per_page));
     
     // Objects
     $objects = [];
@@ -3064,114 +3077,121 @@ function generate_simple_pdf_content($title, $data, $type) {
     $objects[$current_obj] = "1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n";
     $current_obj++;
     
-    // Pages
-    $objects[$current_obj] = "2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n";
-    $current_obj++;
-    
-    // Page - LANDSCAPE orientation (842 x 595 instead of 595 x 842)
-    $objects[$current_obj] = "3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 842 595]\n/Contents 4 0 R\n/Resources <<\n/Font <<\n/F1 5 0 R\n/F2 6 0 R\n>>\n>>\n>>\nendobj\n";
-    $current_obj++;
-    
-    // Content with proper UTF-8 encoding for Turkish characters
-    $content = "BT\n";
-    $content .= "/F2 16 Tf\n"; // Bold font for title
-    $content .= "50 550 Td\n"; // Adjusted for landscape
-    
-    // Handle Turkish characters in title by converting to proper encoding
-    $title_encoded = mb_convert_encoding($title, 'UTF-8', 'UTF-8');
-    $content .= "(" . addslashes($title_encoded) . ") Tj\n";
-    
-    $content .= "/F1 12 Tf\n"; // Regular font
-    $content .= "0 -20 Td\n";
-    $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
-    $content .= "0 -15 Td\n";
-    $content .= "(Toplam Kayit: " . count($data) . ") Tj\n";
-    $content .= "0 -30 Td\n";
-    
-    // Add table headers with wider layout for landscape
-    if ($type === 'customers') {
-        $content .= "(ID    Ad Soyad                      TC Kimlik       Telefon         Email                      Sirket/Meslek              Temsilci) Tj\n";
-        $content .= "0 -15 Td\n";
-        $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
-    } else {
-        $content .= "(ID    Musteri                     Police No        Tur              Sirket              Prim        Baslangic     Bitis         Temsilci) Tj\n";
-        $content .= "0 -15 Td\n";
-        $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
+    // Pages object - will contain all page references
+    $page_kids = [];
+    for ($i = 0; $i < $total_pages; $i++) {
+        $page_kids[] = ($current_obj + 1 + $i) . " 0 R";
     }
+    $objects[$current_obj] = "2 0 obj\n<<\n/Type /Pages\n/Kids [" . implode(" ", $page_kids) . "]\n/Count $total_pages\n>>\nendobj\n";
+    $current_obj++;
     
-    $y_position = 480; // Adjusted for landscape
-    $items_per_page = 25; // Reduced for better spacing in landscape
-    $item_count = 0;
-    
-    foreach ($data as $item) {
-        if ($item_count >= $items_per_page) break; // Limit for simple PDF
+    // Generate each page
+    $content_objects = [];
+    for ($page_num = 0; $page_num < $total_pages; $page_num++) {
+        $page_obj_id = $current_obj;
+        $content_obj_id = $current_obj + $total_pages;
         
+        // Page object - LANDSCAPE orientation (842 x 595)
+        $objects[$current_obj] = "$page_obj_id 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 842 595]\n/Contents $content_obj_id 0 R\n/Resources <<\n/Font <<\n/F1 " . ($current_obj + 2 * $total_pages) . " 0 R\n/F2 " . ($current_obj + 2 * $total_pages + 1) . " 0 R\n>>\n>>\n>>\nendobj\n";
+        $current_obj++;
+        
+        // Prepare content for this page
+        $start_index = $page_num * $items_per_page;
+        $end_index = min($start_index + $items_per_page, count($data));
+        $page_data = array_slice($data, $start_index, $end_index - $start_index);
+        
+        // Content for this page
+        $content = "BT\n";
+        $content .= "/F2 16 Tf\n"; // Bold font for title
+        $content .= "50 550 Td\n"; // Adjusted for landscape
+        
+        // Handle Turkish characters in title
+        $title_converted = convert_turkish_chars_for_pdf($title);
+        $content .= "(" . addslashes($title_converted) . ") Tj\n";
+        
+        $content .= "/F1 12 Tf\n"; // Regular font
+        $content .= "0 -20 Td\n";
+        $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
         $content .= "0 -15 Td\n";
+        $content .= "(Toplam Kayit: " . count($data) . " | Sayfa: " . ($page_num + 1) . "/" . $total_pages . ") Tj\n";
+        $content .= "0 -30 Td\n";
         
+        // Add table headers with wider layout for landscape
         if ($type === 'customers') {
-            // Enhanced customer data display with proper Turkish character handling
-            $first_name = mb_convert_encoding($item->first_name ?? '', 'UTF-8', 'UTF-8');
-            $last_name = mb_convert_encoding($item->last_name ?? '', 'UTF-8', 'UTF-8');
-            $company_name = mb_convert_encoding($item->company_name ?? '', 'UTF-8', 'UTF-8');
-            $occupation = mb_convert_encoding($item->occupation ?? '', 'UTF-8', 'UTF-8');
-            $rep_name = mb_convert_encoding($item->representative_name ?? '', 'UTF-8', 'UTF-8');
-            
-            $line = sprintf("%-4s %-28s %-15s %-15s %-25s %-25s %s",
-                substr($item->id ?? '', 0, 4),
-                substr($first_name . ' ' . $last_name, 0, 28),
-                substr($item->tc_identity ?? $item->tax_number ?? '', 0, 15),
-                substr($item->phone ?? '', 0, 15),
-                substr($item->email ?? '', 0, 25),
-                substr($company_name ?: $occupation, 0, 25),
-                substr($rep_name, 0, 15)
-            );
+            $content .= "(ID    Ad Soyad                      TC Kimlik       Telefon         Email                      Sirket/Meslek              Temsilci) Tj\n";
+            $content .= "0 -15 Td\n";
+            $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
         } else {
-            // Enhanced policy data display with proper Turkish character handling
-            $first_name = mb_convert_encoding($item->first_name ?? '', 'UTF-8', 'UTF-8');
-            $last_name = mb_convert_encoding($item->last_name ?? '', 'UTF-8', 'UTF-8');
-            $policy_type = mb_convert_encoding($item->policy_type ?? '', 'UTF-8', 'UTF-8');
-            $insurance_company = mb_convert_encoding($item->insurance_company ?? '', 'UTF-8', 'UTF-8');
-            $rep_name = mb_convert_encoding($item->representative_name ?? '', 'UTF-8', 'UTF-8');
-            
-            $line = sprintf("%-4s %-23s %-16s %-16s %-19s %-11s %-13s %-13s %s",
-                substr($item->id ?? '', 0, 4),
-                substr($first_name . ' ' . $last_name, 0, 23),
-                substr($item->policy_number ?? '', 0, 16),
-                substr($policy_type, 0, 16),
-                substr($insurance_company, 0, 19),
-                substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 11),
-                substr($item->start_date ? date('d.m.Y', strtotime($item->start_date)) : '', 0, 13),
-                substr($item->end_date ? date('d.m.Y', strtotime($item->end_date)) : '', 0, 13),
-                substr($rep_name, 0, 15)
-            );
+            $content .= "(ID    Musteri                     Police No        Tur              Sirket              Prim        Baslangic     Bitis         Temsilci) Tj\n";
+            $content .= "0 -15 Td\n";
+            $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
         }
         
-        // Keep Turkish characters instead of replacing them
-        $line_encoded = mb_convert_encoding($line, 'UTF-8', 'UTF-8');
-        $content .= "(" . addslashes($line_encoded) . ") Tj\n";
+        // Add data rows for this page
+        foreach ($page_data as $item) {
+            $content .= "0 -15 Td\n";
+            
+            if ($type === 'customers') {
+                // Enhanced customer data display with Turkish character conversion
+                $first_name = convert_turkish_chars_for_pdf($item->first_name ?? '');
+                $last_name = convert_turkish_chars_for_pdf($item->last_name ?? '');
+                $company_name = convert_turkish_chars_for_pdf($item->company_name ?? '');
+                $occupation = convert_turkish_chars_for_pdf($item->occupation ?? '');
+                $rep_name = convert_turkish_chars_for_pdf($item->representative_name ?? '');
+                
+                $line = sprintf("%-4s %-28s %-15s %-15s %-25s %-25s %s",
+                    substr($item->id ?? '', 0, 4),
+                    substr($first_name . ' ' . $last_name, 0, 28),
+                    substr($item->tc_identity ?? $item->tax_number ?? '', 0, 15),
+                    substr($item->phone ?? '', 0, 15),
+                    substr($item->email ?? '', 0, 25),
+                    substr($company_name ?: $occupation, 0, 25),
+                    substr($rep_name, 0, 15)
+                );
+            } else {
+                // Enhanced policy data display with Turkish character conversion
+                $first_name = convert_turkish_chars_for_pdf($item->first_name ?? '');
+                $last_name = convert_turkish_chars_for_pdf($item->last_name ?? '');
+                $policy_type = convert_turkish_chars_for_pdf($item->policy_type ?? '');
+                $insurance_company = convert_turkish_chars_for_pdf($item->insurance_company ?? '');
+                $rep_name = convert_turkish_chars_for_pdf($item->representative_name ?? '');
+                
+                $line = sprintf("%-4s %-23s %-16s %-16s %-19s %-11s %-13s %-13s %s",
+                    substr($item->id ?? '', 0, 4),
+                    substr($first_name . ' ' . $last_name, 0, 23),
+                    substr($item->policy_number ?? '', 0, 16),
+                    substr($policy_type, 0, 16),
+                    substr($insurance_company, 0, 19),
+                    substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 11),
+                    substr($item->start_date ? date('d.m.Y', strtotime($item->start_date)) : '', 0, 13),
+                    substr($item->end_date ? date('d.m.Y', strtotime($item->end_date)) : '', 0, 13),
+                    substr($rep_name, 0, 15)
+                );
+            }
+            
+            $content .= "(" . addslashes($line) . ") Tj\n";
+        }
         
-        $item_count++;
-        $y_position -= 15;
+        $content .= "ET\n";
+        
+        // Store content object for later
+        $content_objects[$content_obj_id] = $content;
     }
     
-    if (count($data) > $items_per_page) {
-        $content .= "0 -20 Td\n";
-        $remaining_text = "... ve " . (count($data) - $items_per_page) . " kayit daha. Tam liste icin CSV formatini kullaniniz.";
-        $remaining_encoded = mb_convert_encoding($remaining_text, 'UTF-8', 'UTF-8');
-        $content .= "(" . addslashes($remaining_encoded) . ") Tj\n";
+    // Add content objects
+    foreach ($content_objects as $content_obj_id => $content) {
+        $objects[$content_obj_id] = "$content_obj_id 0 obj\n<<\n/Length " . strlen($content) . "\n>>\nstream\n$content\nendstream\nendobj\n";
     }
     
-    $content .= "ET\n";
+    // Update current_obj to point to font objects
+    $current_obj = max(array_keys($objects)) + 1;
     
-    $objects[$current_obj] = "4 0 obj\n<<\n/Length " . strlen($content) . "\n>>\nstream\n$content\nendstream\nendobj\n";
+    // Regular font
+    $objects[$current_obj] = "$current_obj 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier\n>>\nendobj\n";
     $current_obj++;
     
-    // Regular font with UTF-8 support
-    $objects[$current_obj] = "5 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier\n/Encoding /WinAnsiEncoding\n>>\nendobj\n";
-    $current_obj++;
-    
-    // Bold font with UTF-8 support
-    $objects[$current_obj] = "6 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier-Bold\n/Encoding /WinAnsiEncoding\n>>\nendobj\n";
+    // Bold font
+    $objects[$current_obj] = "$current_obj 0 obj\n<<\n/Type /Font\n/Subtype /Type1\n/BaseFont /Courier-Bold\n>>\nendobj\n";
     
     // Combine all objects
     $pdf_content .= implode('', $objects);
