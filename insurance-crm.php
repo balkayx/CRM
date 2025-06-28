@@ -2905,12 +2905,67 @@ function export_policies_data($format, $filters) {
 function export_customers_data($format, $filters) {
     global $wpdb;
     
-    // Export ALL authorized data - ignore filters to get complete dataset
-    $where_conditions = ["c.deleted_at IS NULL"];
-    $query_params = [];
+    // Get current user's representative data for permission filtering
+    $current_user_id = get_current_user_id();
+    $current_user_rep_id = $wpdb->get_var($wpdb->prepare(
+        "SELECT id FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+        $current_user_id
+    ));
     
-    // Build the WHERE clause - only include non-deleted records
+    $current_user_role = $wpdb->get_var($wpdb->prepare(
+        "SELECT role FROM {$wpdb->prefix}insurance_crm_representatives WHERE user_id = %d AND status = 'active'",
+        $current_user_id
+    ));
+    
+    // Determine access level based on role
+    $access_level = 'temsilci'; // default
+    switch ($current_user_role) {
+        case '1':
+            $access_level = 'patron';
+            break;
+        case '2':
+            $access_level = 'mudur';
+            break;
+        case '3':
+            $access_level = 'mudur_yardimcisi';
+            break;
+        case '4':
+            $access_level = 'ekip_lideri';
+            break;
+        case '5':
+            $access_level = 'temsilci';
+            break;
+    }
+    
+    // Load visibility function if not available
+    if (!function_exists('build_policy_based_customer_visibility')) {
+        require_once(plugin_dir_path(__FILE__) . 'includes/functions.php');
+    }
+    
+    // Get team members for team leaders
+    $team_members = [];
+    if ($access_level == 'ekip_lideri') {
+        $team_members = $wpdb->get_col($wpdb->prepare(
+            "SELECT id FROM {$wpdb->prefix}insurance_crm_representatives 
+             WHERE team_id = (SELECT team_id FROM {$wpdb->prefix}insurance_crm_representatives WHERE id = %d) 
+             AND status = 'active'",
+            $current_user_rep_id
+        ));
+    }
+    
+    // Get visibility configuration
+    $visibility_config = build_policy_based_customer_visibility($access_level, $current_user_rep_id, $team_members, 'customers');
+    
+    // Build the WHERE clause - include visibility filtering
+    $where_conditions = ["c.deleted_at IS NULL"];
+    
+    // Add visibility restrictions
+    if (!empty($visibility_config['where_clause'])) {
+        $where_conditions[] = substr($visibility_config['where_clause'], 5); // Remove " AND " prefix
+    }
+    
     $where_clause = "WHERE " . implode(" AND ", $where_conditions);
+    $join_clause = $visibility_config['join_clause'] ?? '';
     
     $query = "
         SELECT c.*, 
@@ -2920,6 +2975,7 @@ function export_customers_data($format, $filters) {
         LEFT JOIN {$wpdb->prefix}insurance_crm_representatives r ON c.representative_id = r.id
         LEFT JOIN {$wpdb->prefix}insurance_crm_teams t ON r.team_id = t.id
         LEFT JOIN {$wpdb->users} u ON r.user_id = u.ID
+        $join_clause
         $where_clause
         ORDER BY c.created_at DESC
     ";
@@ -3066,7 +3122,7 @@ function generate_simple_pdf_content($title, $data, $type) {
     $pdf_content = "%PDF-1.4\n";
     
     // Calculate total pages needed
-    $items_per_page = 30; // Items per page with better spacing
+    $items_per_page = 40; // Increased items per page with smaller fonts
     $total_pages = max(1, ceil(count($data) / $items_per_page));
     
     // Objects
@@ -3102,34 +3158,37 @@ function generate_simple_pdf_content($title, $data, $type) {
         
         // Content for this page
         $content = "BT\n";
-        $content .= "/F2 16 Tf\n"; // Bold font for title
+        $content .= "/F2 14 Tf\n"; // Bold font for title (reduced from 16)
         $content .= "50 550 Td\n"; // Adjusted for landscape
         
         // Handle Turkish characters in title
         $title_converted = convert_turkish_chars_for_pdf($title);
         $content .= "(" . addslashes($title_converted) . ") Tj\n";
         
-        $content .= "/F1 12 Tf\n"; // Regular font
-        $content .= "0 -20 Td\n";
+        $content .= "/F1 10 Tf\n"; // Regular font (reduced from 12)
+        $content .= "0 -18 Td\n";
         $content .= "(Rapor Tarihi: " . date('d.m.Y H:i') . ") Tj\n";
-        $content .= "0 -15 Td\n";
+        $content .= "0 -12 Td\n";
         $content .= "(Toplam Kayit: " . count($data) . " | Sayfa: " . ($page_num + 1) . "/" . $total_pages . ") Tj\n";
-        $content .= "0 -30 Td\n";
+        $content .= "0 -25 Td\n";
         
-        // Add table headers with wider layout for landscape
+        // Add table headers with wider layout for landscape and smaller font
         if ($type === 'customers') {
-            $content .= "(ID    Ad Soyad                      TC Kimlik       Telefon         Email                      Sirket/Meslek              Temsilci) Tj\n";
-            $content .= "0 -15 Td\n";
-            $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
+            $content .= "/F2 9 Tf\n"; // Bold smaller font for headers
+            $content .= "(ID    Ad Soyad                          TC Kimlik          Telefon           Email                        Sirket/Meslek                Temsilci) Tj\n";
+            $content .= "0 -12 Td\n";
+            $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
         } else {
-            $content .= "(ID    Musteri                     Police No        Tur              Sirket              Prim        Baslangic     Bitis         Temsilci) Tj\n";
-            $content .= "0 -15 Td\n";
-            $content .= "(--------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
+            $content .= "/F2 9 Tf\n"; // Bold smaller font for headers
+            $content .= "(ID    Musteri                       Police No          Tur                Sirket                 Prim          Baslangic       Bitis           Temsilci) Tj\n";
+            $content .= "0 -12 Td\n";
+            $content .= "(----------------------------------------------------------------------------------------------------------------------------------------------) Tj\n";
         }
         
         // Add data rows for this page
         foreach ($page_data as $item) {
-            $content .= "0 -15 Td\n";
+            $content .= "0 -12 Td\n"; // Reduced spacing
+            $content .= "/F1 8 Tf\n"; // Smaller font for data rows
             
             if ($type === 'customers') {
                 // Enhanced customer data display with Turkish character conversion
@@ -3139,33 +3198,33 @@ function generate_simple_pdf_content($title, $data, $type) {
                 $occupation = convert_turkish_chars_for_pdf($item->occupation ?? '');
                 $rep_name = convert_turkish_chars_for_pdf($item->representative_name ?? '');
                 
-                $line = sprintf("%-4s %-28s %-15s %-15s %-25s %-25s %s",
+                $line = sprintf("%-4s %-32s %-18s %-17s %-28s %-28s %s",
                     substr($item->id ?? '', 0, 4),
-                    substr($first_name . ' ' . $last_name, 0, 28),
-                    substr($item->tc_identity ?? $item->tax_number ?? '', 0, 15),
-                    substr($item->phone ?? '', 0, 15),
-                    substr($item->email ?? '', 0, 25),
-                    substr($company_name ?: $occupation, 0, 25),
-                    substr($rep_name, 0, 15)
+                    substr($first_name . ' ' . $last_name, 0, 32),
+                    substr($item->tc_identity ?? $item->tax_number ?? '', 0, 18),
+                    substr($item->phone ?? '', 0, 17),
+                    substr($item->email ?? '', 0, 28),
+                    substr($company_name ?: $occupation, 0, 28),
+                    substr($rep_name, 0, 18)
                 );
             } else {
-                // Enhanced policy data display with Turkish character conversion
+                // Enhanced policy data display with Turkish character conversion and better spacing
                 $first_name = convert_turkish_chars_for_pdf($item->first_name ?? '');
                 $last_name = convert_turkish_chars_for_pdf($item->last_name ?? '');
                 $policy_type = convert_turkish_chars_for_pdf($item->policy_type ?? '');
                 $insurance_company = convert_turkish_chars_for_pdf($item->insurance_company ?? '');
                 $rep_name = convert_turkish_chars_for_pdf($item->representative_name ?? '');
                 
-                $line = sprintf("%-4s %-23s %-16s %-16s %-19s %-11s %-13s %-13s %s",
+                $line = sprintf("%-4s %-29s %-18s %-18s %-22s %-13s %-15s %-15s %s",
                     substr($item->id ?? '', 0, 4),
-                    substr($first_name . ' ' . $last_name, 0, 23),
-                    substr($item->policy_number ?? '', 0, 16),
-                    substr($policy_type, 0, 16),
-                    substr($insurance_company, 0, 19),
-                    substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 11),
-                    substr($item->start_date ? date('d.m.Y', strtotime($item->start_date)) : '', 0, 13),
-                    substr($item->end_date ? date('d.m.Y', strtotime($item->end_date)) : '', 0, 13),
-                    substr($rep_name, 0, 15)
+                    substr($first_name . ' ' . $last_name, 0, 29),
+                    substr($item->policy_number ?? '', 0, 18),
+                    substr($policy_type, 0, 18),
+                    substr($insurance_company, 0, 22),
+                    substr($item->premium_amount ? number_format($item->premium_amount, 0) . ' TL' : '0', 0, 13),
+                    substr($item->start_date ? date('d.m.Y', strtotime($item->start_date)) : '', 0, 15),
+                    substr($item->end_date ? date('d.m.Y', strtotime($item->end_date)) : '', 0, 15),
+                    substr($rep_name, 0, 18)
                 );
             }
             
