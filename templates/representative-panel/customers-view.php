@@ -4623,6 +4623,8 @@ tr.overdue td {
 /* Task Notes Styles */
 .task-notes-list {
     margin-bottom: 20px;
+    max-height: 400px;
+    overflow-y: auto;
 }
 
 .task-note-item {
@@ -4704,6 +4706,67 @@ tr.overdue td {
     color: #dee2e6;
     margin-bottom: 15px;
     display: block;
+}
+
+/* Task Notes Modal specific styles */
+#taskNotesModal .ab-modal-content,
+#addTaskNoteModal .ab-modal-content,
+#editTaskNoteModal .ab-modal-content {
+    max-width: 600px;
+    z-index: 9999;
+}
+
+/* Task Notes table column */
+.ab-crm-table th:nth-child(5),
+.ab-crm-table td:nth-child(5) {
+    text-align: center;
+    width: 120px;
+}
+
+/* Responsive design for task notes */
+@media (max-width: 768px) {
+    .ab-crm-table th:nth-child(5),
+    .ab-crm-table td:nth-child(5) {
+        width: 80px;
+    }
+    
+    .ab-crm-table th:nth-child(5) {
+        font-size: 12px;
+    }
+    
+    .ab-crm-table td:nth-child(5) .ab-btn {
+        padding: 4px 6px;
+        font-size: 11px;
+    }
+    
+    .ab-crm-table td:nth-child(5) .ab-btn i {
+        margin-right: 2px;
+    }
+}
+
+@media (max-width: 576px) {
+    .ab-crm-table th:nth-child(5),
+    .ab-crm-table td:nth-child(5) {
+        width: 60px;
+    }
+    
+    .ab-crm-table td:nth-child(5) .ab-btn span {
+        display: none;
+    }
+    
+    .ab-crm-table td:nth-child(5) .ab-btn {
+        padding: 6px;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .ab-crm-table td:nth-child(5) .ab-btn i {
+        margin: 0;
+    }
 }
 </style>
 
@@ -5566,7 +5629,11 @@ function displayTaskNotesFromServer(taskId) {
     }
     ?>
     
-    displayTaskNotes(taskNotes[taskId] || []);
+    if (typeof taskNotes[taskId] !== 'undefined') {
+        displayTaskNotes(taskNotes[taskId]);
+    } else {
+        displayTaskNotes([]);
+    }
 }
 
 function displayTaskNotes(notes) {
