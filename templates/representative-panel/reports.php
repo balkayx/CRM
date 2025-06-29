@@ -70,6 +70,79 @@ class NextGenReportsManager {
     }
 
     /**
+     * Get monthly premium trends
+     */
+    public function getMonthlyPremiumTrends($filters = []) {
+        $conditions = ["p.status = 'active'"];
+        $params = [];
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $conditions[] = "DATE(p.created_at) BETWEEN %s AND %s";
+            $params[] = $filters['start_date'];
+            $params[] = $filters['end_date'];
+        } else {
+            // Default to last 6 months
+            $conditions[] = "p.created_at >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)";
+        }
+
+        $where_clause = implode(' AND ', $conditions);
+
+        $trends = $this->wpdb->get_results($this->wpdb->prepare("
+            SELECT 
+                DATE_FORMAT(p.created_at, '%Y-%m') as month,
+                MONTHNAME(p.created_at) as month_name,
+                SUM(p.premium_amount) as total_premium,
+                COUNT(p.id) as policy_count
+            FROM {$this->tables['policies']} p
+            WHERE {$where_clause}
+            GROUP BY DATE_FORMAT(p.created_at, '%Y-%m'), MONTHNAME(p.created_at)
+            ORDER BY month ASC
+        ", $params));
+
+        return $trends;
+    }
+
+    /**
+     * Get dashboard statistics
+     */
+    public function getDashboardStats() {
+        // Total customers
+        $total_customers = $this->wpdb->get_var("
+            SELECT COUNT(*) FROM {$this->tables['customers']} 
+            WHERE status != 'deleted'
+        ");
+        
+        // Total premium amount
+        $total_premium = $this->wpdb->get_var("
+            SELECT COALESCE(SUM(premium_amount), 0) FROM {$this->tables['policies']} 
+            WHERE status = 'active'
+        ");
+        
+        // Active policies count
+        $active_policies = $this->wpdb->get_var("
+            SELECT COUNT(*) FROM {$this->tables['policies']} 
+            WHERE status = 'active'
+        ");
+        
+        // Renewal rate calculation (policies renewed vs expiring)
+        $renewal_rate = $this->wpdb->get_var("
+            SELECT 
+                ROUND(
+                    (COUNT(CASE WHEN renewed = 1 THEN 1 END) * 100.0 / 
+                     NULLIF(COUNT(CASE WHEN end_date < CURDATE() THEN 1 END), 0)), 2
+                ) 
+            FROM {$this->tables['policies']}
+        ");
+        
+        return [
+            'total_customers' => intval($total_customers),
+            'total_premium' => floatval($total_premium),
+            'active_policies' => intval($active_policies),
+            'renewal_rate' => floatval($renewal_rate) ?: 0
+        ];
+    }
+
+    /**
      * Customer Demographics Analysis
      */
     public function getCustomerDemographics($filters = []) {
@@ -774,10 +847,12 @@ if (isset($_GET['export'])) {
 
 // Get initial data for dashboard
 $dashboard_data = [
+    'stats' => $reports_manager->getDashboardStats(),
     'customer_demographics' => $reports_manager->getCustomerDemographics(),
     'policy_performance' => $reports_manager->getPolicyPerformance(),
     'representative_performance' => $reports_manager->getRepresentativePerformance(),
-    'quote_conversion' => $reports_manager->getQuoteConversion()
+    'quote_conversion' => $reports_manager->getQuoteConversion(),
+    'monthly_trends' => $reports_manager->getMonthlyPremiumTrends()
 ];
 
 ?>
@@ -1161,23 +1236,39 @@ $dashboard_data = [
             width: 100%;
             border-collapse: collapse;
             margin-top: 1rem;
+            font-size: 0.9rem;
+            table-layout: fixed;
         }
 
         .data-table th,
         .data-table td {
-            padding: 0.75rem;
+            padding: 0.6rem 0.5rem;
             text-align: left;
             border-bottom: 1px solid var(--border-color);
+            word-wrap: break-word;
+            overflow: hidden;
         }
 
         .data-table th {
             background: var(--bg-tertiary);
             font-weight: 600;
             color: var(--text-primary);
+            font-size: 0.85rem;
         }
 
         .data-table tbody tr:hover {
             background: var(--bg-secondary);
+        }
+
+        .data-table .btn {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.7rem;
+            margin: 0.1rem;
+        }
+
+        .data-table a {
+            font-size: 0.8rem;
+            word-break: break-word;
         }
 
         /* Responsive Design */
@@ -1223,12 +1314,19 @@ $dashboard_data = [
             }
 
             .data-table {
-                font-size: 0.875rem;
+                font-size: 0.8rem;
+                table-layout: auto;
             }
 
             .data-table th,
             .data-table td {
-                padding: 0.5rem;
+                padding: 0.4rem 0.3rem;
+                font-size: 0.75rem;
+            }
+
+            .data-table .btn {
+                padding: 0.2rem 0.4rem;
+                font-size: 0.65rem;
             }
         }
 
@@ -1507,22 +1605,28 @@ $dashboard_data = [
             }
 
             renderDashboard(container) {
+                const stats = this.data.stats || {};
+                const totalCustomers = parseInt(stats.total_customers) || 0;
+                const totalPremium = parseFloat(stats.total_premium) || 0;
+                const activePolicies = parseInt(stats.active_policies) || 0;
+                const renewalRate = parseFloat(stats.renewal_rate) || 0;
+                
                 container.innerHTML = `
                     <div class="stats-grid">
                         <div class="stat-card">
-                            <div class="stat-value">1,234</div>
+                            <div class="stat-value">${totalCustomers.toLocaleString()}</div>
                             <div class="stat-label">Toplam Müşteri</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">₺2.5M</div>
+                            <div class="stat-value">₺${totalPremium.toLocaleString()}</div>
                             <div class="stat-label">Toplam Prim</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">567</div>
+                            <div class="stat-value">${activePolicies.toLocaleString()}</div>
                             <div class="stat-label">Aktif Poliçe</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">%89</div>
+                            <div class="stat-value">%${renewalRate}</div>
                             <div class="stat-label">Yenileme Oranı</div>
                         </div>
                     </div>
@@ -1725,14 +1829,19 @@ $dashboard_data = [
             initCharts() {
                 // Age Distribution Chart
                 const ageCtx = document.getElementById('age-distribution-chart')?.getContext('2d');
-                if (ageCtx) {
+                if (ageCtx && this.data.customer_demographics) {
+                    const ageData = this.data.customer_demographics.age_groups || [];
+                    const labels = ageData.map(item => item.age_group);
+                    const counts = ageData.map(item => parseInt(item.count) || 0);
+                    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+                    
                     this.charts.ageDistribution = new Chart(ageCtx, {
                         type: 'doughnut',
                         data: {
-                            labels: ['18-25', '26-35', '36-50', '50+'],
+                            labels: labels,
                             datasets: [{
-                                data: [15, 35, 30, 20],
-                                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
+                                data: counts,
+                                backgroundColor: colors.slice(0, labels.length)
                             }]
                         },
                         options: {
@@ -1749,14 +1858,19 @@ $dashboard_data = [
 
                 // Policy Type Chart
                 const policyCtx = document.getElementById('policy-type-chart')?.getContext('2d');
-                if (policyCtx) {
+                if (policyCtx && this.data.policy_performance) {
+                    const policyData = this.data.policy_performance.policy_types || [];
+                    const labels = policyData.map(item => item.policy_type || 'Diğer');
+                    const counts = policyData.map(item => parseInt(item.count) || 0);
+                    const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16'];
+                    
                     this.charts.policyType = new Chart(policyCtx, {
                         type: 'pie',
                         data: {
-                            labels: ['Trafik', 'Kasko', 'Konut', 'DASK', 'Sağlık'],
+                            labels: labels,
                             datasets: [{
-                                data: [40, 25, 15, 10, 10],
-                                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                                data: counts,
+                                backgroundColor: colors.slice(0, labels.length)
                             }]
                         },
                         options: {
@@ -1773,17 +1887,22 @@ $dashboard_data = [
 
                 // Premium Trend Chart
                 const trendCtx = document.getElementById('premium-trend-chart')?.getContext('2d');
-                if (trendCtx) {
+                if (trendCtx && this.data.monthly_trends) {
+                    const monthlyData = this.data.monthly_trends || [];
+                    const labels = monthlyData.map(item => item.month_name || 'Bilinmiyor');
+                    const premiums = monthlyData.map(item => parseFloat(item.total_premium) || 0);
+                    
                     this.charts.premiumTrend = new Chart(trendCtx, {
                         type: 'line',
                         data: {
-                            labels: ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz'],
+                            labels: labels,
                             datasets: [{
                                 label: 'Toplam Prim',
-                                data: [120000, 150000, 180000, 220000, 280000, 320000],
+                                data: premiums,
                                 borderColor: '#3b82f6',
                                 backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                tension: 0.4
+                                tension: 0.4,
+                                fill: true
                             }]
                         },
                         options: {
@@ -1805,14 +1924,18 @@ $dashboard_data = [
 
                 // Representative Performance Chart
                 const repCtx = document.getElementById('representative-performance-chart')?.getContext('2d');
-                if (repCtx) {
+                if (repCtx && this.data.representative_performance) {
+                    const repData = this.data.representative_performance;
+                    const labels = repData.map(rep => rep.rep_name || 'Bilinmiyor');
+                    const premiums = repData.map(rep => parseFloat(rep.total_premium) || 0);
+                    
                     this.charts.representativePerformance = new Chart(repCtx, {
                         type: 'bar',
                         data: {
-                            labels: ['Ahmet K.', 'Ayşe M.', 'Mehmet D.', 'Fatma S.', 'Ali Y.'],
+                            labels: labels,
                             datasets: [{
                                 label: 'Toplam Prim',
-                                data: [85000, 92000, 78000, 105000, 67000],
+                                data: premiums,
                                 backgroundColor: '#10b981'
                             }]
                         },
@@ -1905,6 +2028,37 @@ $dashboard_data = [
                             }
                         }
                     });
+                }
+            }
+
+            loadRepresentativeTable() {
+                const tableBody = document.getElementById('rep-performance-table');
+                if (tableBody && this.data.representative_performance) {
+                    let html = '';
+                    this.data.representative_performance.forEach(rep => {
+                        const avgPremium = parseFloat(rep.avg_premium) || 0;
+                        const totalPremium = parseFloat(rep.total_premium) || 0;
+                        const policyCount = parseInt(rep.policy_count) || 0;
+                        const activePolicies = parseInt(rep.active_policies) || 0;
+                        const uniqueCustomers = parseInt(rep.unique_customers) || 0;
+                        
+                        html += `
+                            <tr>
+                                <td>${rep.rep_name || 'Bilinmiyor'}</td>
+                                <td>${policyCount}</td>
+                                <td>₺${totalPremium.toLocaleString()}</td>
+                                <td>${activePolicies}</td>
+                                <td>${uniqueCustomers}</td>
+                                <td>₺${avgPremium.toLocaleString()}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    if (html === '') {
+                        html = '<tr><td colspan="6" style="text-align: center;">Veri bulunamadı</td></tr>';
+                    }
+                    
+                    tableBody.innerHTML = html;
                 }
             }
 
@@ -2256,34 +2410,22 @@ $dashboard_data = [
                         
                         <div class="dashboard-card">
                             <div class="card-header">
-                                <h3 class="card-title">Hedef Başarı Oranları</h3>
+                                <h3 class="card-title">Temsilci Performans Tablosu</h3>
                             </div>
                             <div class="card-content">
                                 <table class="data-table">
                                     <thead>
                                         <tr>
                                             <th>Temsilci</th>
-                                            <th>Hedef</th>
-                                            <th>Gerçekleşen</th>
-                                            <th>Başarı %</th>
-                                            <th>Durum</th>
+                                            <th>Poliçe Sayısı</th>
+                                            <th>Toplam Prim</th>
+                                            <th>Aktif Poliçe</th>
+                                            <th>Müşteri Sayısı</th>
+                                            <th>Ort. Prim</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Ahmet Kaya</td>
-                                            <td>₺50,000</td>
-                                            <td>₺62,000</td>
-                                            <td>%124</td>
-                                            <td><span style="color: #10b981;">✓ Hedef Aşıldı</span></td>
-                                        </tr>
-                                        <tr>
-                                            <td>Ayşe Demir</td>
-                                            <td>₺45,000</td>
-                                            <td>₺41,000</td>
-                                            <td>%91</td>
-                                            <td><span style="color: #f59e0b;">⚠ Hedefe Yakın</span></td>
-                                        </tr>
+                                    <tbody id="rep-performance-table">
+                                        <!-- Data will be loaded here -->
                                     </tbody>
                                 </table>
                             </div>
@@ -2292,6 +2434,7 @@ $dashboard_data = [
                 `;
 
                 this.initRepresentativeCharts();
+                this.loadRepresentativeTable();
             }
 
             renderProfitabilityAnalysis(container) {
