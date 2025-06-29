@@ -11,6 +11,12 @@ if (!is_user_logged_in()) {
     return;
 }
 
+// Lisans kontrolü - Frontend için inline uyarı
+if (!insurance_crm_check_frontend_module_access('data_transfer', 'Veri Aktarımı')) {
+    // Lisans uyarısı gösterildi, modül yüklenmesin
+    return;
+}
+
 // Start session if not already started
 if (session_status() === PHP_SESSION_NONE) {
     session_start();

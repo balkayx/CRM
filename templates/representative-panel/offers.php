@@ -14,6 +14,12 @@ if (!defined('ABSPATH') || !is_user_logged_in()) {
     wp_die(__('Bu sayfaya erişim yetkiniz bulunmamaktadır.', 'insurance-crm'), __('Erişim Engellendi', 'insurance-crm'), array('response' => 403));
 }
 
+// Lisans kontrolü - Frontend için inline uyarı
+if (!insurance_crm_check_frontend_module_access('quotes', 'Teklifler')) {
+    // Lisans uyarısı gösterildi, modül yüklenmesin
+    return;
+}
+
 // Modern CSS Framework - Material Design 3
 wp_enqueue_style('font-awesome');
 ?>

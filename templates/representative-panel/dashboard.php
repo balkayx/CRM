@@ -57,13 +57,13 @@ if ($insurance_crm_license_manager) {
         
         error_log('[LISANS DEBUG] Frontend access denied - Status: ' . $license_status . ', Restricted: ' . ($is_restricted ? 'Yes' : 'No'));
         
-        // If license is completely invalid or expired beyond grace period, restrict access
+        // If license is completely invalid or expired beyond grace period, show restriction page
         if (!$insurance_crm_license_manager->is_in_grace_period() && $license_status !== 'active') {
-            // Only allow access to license management
+            // Only allow access to license management and license restriction
             $current_view = isset($_GET['view']) ? sanitize_text_field($_GET['view']) : 'dashboard';
-            if ($current_view !== 'license-management') {
-                // Redirect to license management
-                wp_safe_redirect(add_query_arg('view', 'license-management', get_permalink()));
+            if ($current_view !== 'license-management' && $current_view !== 'license-restriction') {
+                // Redirect to license restriction page instead of license management
+                wp_safe_redirect(add_query_arg(array('view' => 'license-restriction', 'restriction' => 'data'), get_permalink()));
                 exit;
             }
         }
@@ -86,6 +86,9 @@ if (!$representative) {
 
 // Include enhanced dashboard functions
 require_once(dirname(__FILE__) . '/../../includes/dashboard-functions.php');
+
+// Include frontend license control functions
+require_once(dirname(__FILE__) . '/../../includes/frontend-license-control.php');
 
 // Include template colors for consistent styling
 include_once(dirname(__FILE__) . '/template-colors.php');
@@ -5828,6 +5831,9 @@ window.addEventListener('resize', function() {
             <div class="main-content">
                 <?php include_once(dirname(__FILE__) . '/iceri_aktarim.php'); ?>
             </div>
+        
+        <?php elseif ($current_view == 'license-restriction'): ?>
+            <?php include_once(dirname(__FILE__) . '/license-restriction.php'); ?>
 
         <?php endif; ?>
 
@@ -6953,7 +6959,7 @@ window.addEventListener('resize', function() {
                 margin-top: 10px;
                 display: none;
                 overflow: hidden;
-                z-index: 1000;
+                z-index: 10001;
             }
             
             .notifications-dropdown.show {
@@ -7084,7 +7090,7 @@ window.addEventListener('resize', function() {
                 margin-top: 10px;
                 display: none;
                 overflow: hidden;
-                z-index: 1000;
+                z-index: 10001;
             }
             .quick-add-dropdown.show {
                 display: block;
@@ -9224,7 +9230,7 @@ window.addEventListener('resize', function() {
                     position: fixed !important;
                     top: 60px !important;
                     right: 10px !important;
-                    left: 10px !important;
+                    left: 70px !important;
                     width: auto !important;
                     max-height: 70vh;
                     overflow-y: auto;
@@ -9240,7 +9246,7 @@ window.addEventListener('resize', function() {
                     position: fixed !important;
                     top: 60px !important;
                     right: 10px !important;
-                    left: 10px !important;
+                    left: 70px !important;
                     width: auto !important;
                 }
                 
@@ -9563,7 +9569,7 @@ window.addEventListener('resize', function() {
                 .quick-add-dropdown {
                     top: 50px !important;
                     right: 5px !important;
-                    left: 5px !important;
+                    left: 70px !important;
                 }
                 
                 .modal-content {

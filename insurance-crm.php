@@ -10,9 +10,9 @@
  * Plugin Name: Insurance CRM
  * Plugin URI: https://github.com/anadolubirlik/insurance-crm
  * Description: Sigorta acenteleri için müşteri, poliçe ve görev yönetim sistemi.
- * Version: 1.9.5_6
+ * Version: 1.9.7_8
  * Pagename: insurance-crm.php
- * Page Version: 1.9.5_6
+ * Page Version: 1.9.7_8
  * Author: Mehmet BALKAY | Anadolu Birlik
  * Author URI: https://www.balkay.net
  */
@@ -95,6 +95,18 @@ if (file_exists($api_file) && file_exists($license_manager_file)) {
     $access_control_file = plugin_dir_path(__FILE__) . 'includes/license-access-control.php';
     if (file_exists($access_control_file)) {
         require_once $access_control_file;
+    }
+
+    // Enhanced module restrictions dosyasını yükle
+    $module_restrictions_file = plugin_dir_path(__FILE__) . 'includes/license-module-restrictions.php';
+    if (file_exists($module_restrictions_file)) {
+        require_once $module_restrictions_file;
+    }
+
+    // Frontend license control dosyasını yükle
+    $frontend_license_control_file = plugin_dir_path(__FILE__) . 'includes/frontend-license-control.php';
+    if (file_exists($frontend_license_control_file)) {
+        require_once $frontend_license_control_file;
     }
 
     // Deaktive edildiğinde cron işlerini temizle
@@ -1031,6 +1043,23 @@ function insurance_crm_add_sample_data() {
 register_activation_hook(__FILE__, 'insurance_crm_add_sample_data');
 
 /**
+ * Clear WordPress menu cache to ensure bypass menu appears
+ */
+function insurance_crm_clear_menu_cache() {
+    // Clear WordPress menu-related caches
+    delete_option('insurance_crm_menu_initialized');
+    delete_option('insurance_crm_menu_cache_cleared');
+    
+    // Clear any menu-related transients
+    global $wpdb;
+    $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '%transient%menu%'");
+    
+    // Force WordPress to rebuild admin menu
+    wp_cache_delete('admin_menu', 'site-options');
+    wp_cache_delete('submenu', 'site-options');
+}
+
+/**
  * Plugin güncelleme kontrolü ve işlemleri
  */
 function insurance_crm_update_check() {
@@ -1040,6 +1069,9 @@ function insurance_crm_update_check() {
         delete_option('insurance_crm_menu_initialized');
         delete_option('insurance_crm_menu_cache_cleared');
         update_option('insurance_crm_version', INSURANCE_CRM_VERSION);
+        
+        // Clear menu cache to ensure bypass menu appears
+        insurance_crm_clear_menu_cache();
         
         global $wpdb;
         $wpdb->query("DELETE FROM {$wpdb->options} WHERE option_name LIKE '%transient%menu%'");

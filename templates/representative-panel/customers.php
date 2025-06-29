@@ -16,6 +16,12 @@ if (!defined('ABSPATH') || !is_user_logged_in()) {
     return;
 }
 
+// Lisans kontrolü - Frontend için inline uyarı
+if (!insurance_crm_check_frontend_module_access('customers', 'Müşteriler')) {
+    // Lisans uyarısı gösterildi, modül yüklenmesin
+    return;
+}
+
 // Global değişkenler
 global $wpdb;
 $customers_table = $wpdb->prefix . 'insurance_crm_customers';

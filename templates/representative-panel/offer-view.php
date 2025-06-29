@@ -10,6 +10,12 @@ if (!is_user_logged_in() || !isset($_GET['id'])) {
     return;
 }
 
+// Lisans kontrolü - Frontend için inline uyarı
+if (!insurance_crm_check_frontend_module_access('quotes', 'Teklifler')) {
+    // Lisans uyarısı gösterildi, modül yüklenmesin
+    return;
+}
+
 $customer_id = intval($_GET['id']);
 global $wpdb;
 $customers_table = $wpdb->prefix . 'insurance_crm_customers';

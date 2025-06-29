@@ -16,6 +16,12 @@ if (!is_user_logged_in()) {
     return;
 }
 
+// Lisans kontrolü - Frontend için inline uyarı
+if (!insurance_crm_check_frontend_module_access('tasks', 'Görevler')) {
+    // Lisans uyarısı gösterildi, modül yüklenmesin
+    return;
+}
+
 // Değişkenleri tanımla
 global $wpdb;
 $tasks_table = $wpdb->prefix . 'insurance_crm_tasks';

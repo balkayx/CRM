@@ -12,6 +12,12 @@ if (!defined('ABSPATH') || !is_user_logged_in()) {
     wp_die(__('Bu sayfaya erişim yetkiniz bulunmamaktadır.', 'insurance-crm'), __('Erişim Engellendi', 'insurance-crm'), array('response' => 403));
 }
 
+// Lisans kontrolü - Frontend için inline uyarı
+if (!insurance_crm_check_frontend_module_access('policies', 'Poliçeler')) {
+    // Lisans uyarısı gösterildi, modül yüklenmesin
+    return;
+}
+
 // Global değişkenler
 global $wpdb;
 $policies_table = $wpdb->prefix . 'insurance_crm_policies';
