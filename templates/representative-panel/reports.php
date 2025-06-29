@@ -463,41 +463,6 @@ class NextGenReportsManager {
     }
 
     /**
-     * Profitability Analysis
-     */
-    public function getProfitabilityAnalysis($filters = []) {
-        // This is a simplified profitability calculation
-        // In real implementation, you'd include actual cost data
-        
-        $conditions = ["p.status = 'active'"];
-        $params = [];
-
-        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
-            $conditions[] = "DATE(p.created_at) BETWEEN %s AND %s";
-            $params[] = $filters['start_date'];
-            $params[] = $filters['end_date'];
-        }
-
-        $where_clause = implode(' AND ', $conditions);
-
-        $profitability = $this->wpdb->get_results($this->wpdb->prepare("
-            SELECT 
-                p.policy_type,
-                COUNT(*) as policy_count,
-                SUM(p.premium_amount) as total_revenue,
-                AVG(p.premium_amount) as avg_revenue_per_policy,
-                SUM(p.premium_amount * 0.15) as estimated_commission,
-                SUM(p.premium_amount * 0.85) as estimated_cost
-            FROM {$this->tables['policies']} p
-            WHERE {$where_clause}
-            GROUP BY p.policy_type
-            ORDER BY total_revenue DESC
-        ", $params));
-
-        return $profitability;
-    }
-
-    /**
      * Geographic Distribution
      */
     public function getGeographicDistribution($filters = []) {
@@ -901,7 +866,8 @@ $dashboard_data = [
     'representative_performance' => $reports_manager->getRepresentativePerformance(),
     'quote_conversion' => $reports_manager->getQuoteConversion(),
     'monthly_trends' => $reports_manager->getMonthlyPremiumTrends(),
-    'profitability' => $reports_manager->getProfitabilityAnalysis()
+    'profitability' => $reports_manager->getProfitabilityAnalysis(),
+    'vip_customers' => $reports_manager->getVIPCustomers()
 ];
 
 ?>
@@ -2112,29 +2078,38 @@ $dashboard_data = [
             }
 
             loadVIPCustomers() {
-                // This would normally make an AJAX call to get VIP customer data
                 const tableBody = document.getElementById('vip-customers-table');
-                if (tableBody) {
-                    tableBody.innerHTML = `
-                        <tr>
-                            <td>Mehmet Özkan</td>
-                            <td>0532 123 4567</td>
-                            <td>3</td>
-                            <td>₺15,000</td>
-                            <td>892 gün</td>
-                            <td>%95</td>
-                            <td><button class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Detay</button></td>
-                        </tr>
-                        <tr>
-                            <td>Ayşe Kaya</td>
-                            <td>0533 987 6543</td>
-                            <td>2</td>
-                            <td>₺12,500</td>
-                            <td>756 gün</td>
-                            <td>%100</td>
-                            <td><button class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;">Detay</button></td>
-                        </tr>
-                    `;
+                if (tableBody && this.data.vip_customers) {
+                    let html = '';
+                    this.data.vip_customers.forEach(customer => {
+                        const customerName = customer.name || 'Bilinmiyor';
+                        const customerPhone = customer.phone || '-';
+                        const policyCount = parseInt(customer.policy_count) || 0;
+                        const totalPremium = parseFloat(customer.total_premium) || 0;
+                        const customerDuration = parseInt(customer.customer_duration) || 0;
+                        const renewalRate = parseFloat(customer.renewal_rate) || 0;
+                        
+                        // Calculate days display
+                        const daysDisplay = customerDuration > 0 ? `${customerDuration} gün` : 'Yeni müşteri';
+                        
+                        html += `
+                            <tr>
+                                <td>${customerName}</td>
+                                <td>${customerPhone}</td>
+                                <td>${policyCount}</td>
+                                <td>₺${totalPremium.toLocaleString()}</td>
+                                <td>${daysDisplay}</td>
+                                <td>%${renewalRate.toFixed(1)}</td>
+                                <td><button class="btn btn-primary" onclick="viewCustomerDetail(${customer.id || 0})">Detay</button></td>
+                            </tr>
+                        `;
+                    });
+                    
+                    if (html === '') {
+                        html = '<tr><td colspan="7" style="text-align: center;">VIP müşteri bulunamadı</td></tr>';
+                    }
+                    
+                    tableBody.innerHTML = html;
                 }
             }
 
@@ -2869,11 +2844,18 @@ $dashboard_data = [
 
             showLoading();
             
-            // Simulate API call
+            // Simulate API call - in production this would fetch filtered data
             setTimeout(() => {
                 hideLoading();
                 app.loadVIPCustomers();
             }, 1000);
+        }
+
+        function viewCustomerDetail(customerId) {
+            // Navigate to customer detail page
+            if (customerId > 0) {
+                window.location.href = `?page=customers&action=view&id=${customerId}`;
+            }
         }
 
         function showLoading() {
