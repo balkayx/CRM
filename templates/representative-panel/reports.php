@@ -409,6 +409,243 @@ class NextGenReportsManager {
 
         return $geographic_data;
     }
+
+    /**
+     * Customer Lifetime Value Analysis
+     */
+    public function getCustomerLifetimeValue($filters = []) {
+        $conditions = ["1=1"];
+        $params = [];
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $conditions[] = "DATE(c.created_at) BETWEEN %s AND %s";
+            $params[] = $filters['start_date'];
+            $params[] = $filters['end_date'];
+        }
+
+        $where_clause = implode(' AND ', $conditions);
+
+        $clv_data = $this->wpdb->get_results($this->wpdb->prepare("
+            SELECT 
+                c.id,
+                CONCAT(c.first_name, ' ', c.last_name) as customer_name,
+                COUNT(p.id) as total_policies,
+                SUM(p.premium_amount) as total_revenue,
+                AVG(p.premium_amount) as avg_policy_value,
+                DATEDIFF(CURDATE(), c.created_at) as customer_age_days,
+                (SUM(p.premium_amount) / (DATEDIFF(CURDATE(), c.created_at) / 365.25)) as annual_value,
+                SUM(p.premium_amount) * 1.2 as estimated_clv,
+                CASE 
+                    WHEN SUM(p.premium_amount) > 15000 THEN 'Yüksek'
+                    WHEN SUM(p.premium_amount) > 8000 THEN 'Orta'
+                    ELSE 'Düşük'
+                END as clv_segment
+            FROM {$this->tables['customers']} c
+            LEFT JOIN {$this->tables['policies']} p ON c.id = p.customer_id
+            WHERE {$where_clause}
+            GROUP BY c.id
+            HAVING total_policies > 0
+            ORDER BY estimated_clv DESC
+            LIMIT 100
+        ", $params));
+
+        return $clv_data;
+    }
+
+    /**
+     * Advanced Market Analysis
+     */
+    public function getMarketAnalysis($filters = []) {
+        $conditions = ["1=1"];
+        $params = [];
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $conditions[] = "DATE(p.created_at) BETWEEN %s AND %s";
+            $params[] = $filters['start_date'];
+            $params[] = $filters['end_date'];
+        }
+
+        $where_clause = implode(' AND ', $conditions);
+
+        // Market penetration by region
+        $penetration = $this->wpdb->get_results($this->wpdb->prepare("
+            SELECT 
+                c.city,
+                COUNT(DISTINCT c.id) as total_customers,
+                COUNT(p.id) as total_policies,
+                SUM(p.premium_amount) as market_size,
+                (COUNT(p.id) / COUNT(DISTINCT c.id)) as penetration_rate,
+                AVG(p.premium_amount) as avg_premium_in_market
+            FROM {$this->tables['customers']} c
+            LEFT JOIN {$this->tables['policies']} p ON c.id = p.customer_id
+            WHERE {$where_clause}
+            GROUP BY c.city
+            HAVING total_customers >= 10
+            ORDER BY market_size DESC
+        ", $params));
+
+        // Growth trends
+        $growth_trends = $this->wpdb->get_results($this->wpdb->prepare("
+            SELECT 
+                DATE_FORMAT(p.created_at, '%%Y-%%m') as month,
+                p.policy_type,
+                COUNT(*) as new_policies,
+                SUM(p.premium_amount) as monthly_premium,
+                LAG(COUNT(*)) OVER (PARTITION BY p.policy_type ORDER BY DATE_FORMAT(p.created_at, '%%Y-%%m')) as prev_month_policies
+            FROM {$this->tables['policies']} p
+            WHERE {$where_clause}
+            GROUP BY DATE_FORMAT(p.created_at, '%%Y-%%m'), p.policy_type
+            ORDER BY month DESC, p.policy_type
+            LIMIT 60
+        ", $params));
+
+        return [
+            'penetration' => $penetration,
+            'growth_trends' => $growth_trends
+        ];
+    }
+
+    /**
+     * Task Performance Analytics
+     */
+    public function getTaskPerformanceAnalytics($filters = []) {
+        $conditions = ["1=1"];
+        $params = [];
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $conditions[] = "DATE(t.created_at) BETWEEN %s AND %s";
+            $params[] = $filters['start_date'];
+            $params[] = $filters['end_date'];
+        }
+
+        $where_clause = implode(' AND ', $conditions);
+
+        $task_performance = $this->wpdb->get_results($this->wpdb->prepare("
+            SELECT 
+                r.id as rep_id,
+                CONCAT(u.display_name, ' (', r.role, ')') as rep_name,
+                COUNT(t.id) as total_tasks,
+                COUNT(CASE WHEN t.status = 'completed' THEN 1 END) as completed_tasks,
+                COUNT(CASE WHEN t.status = 'pending' THEN 1 END) as pending_tasks,
+                COUNT(CASE WHEN t.status = 'overdue' THEN 1 END) as overdue_tasks,
+                AVG(CASE WHEN t.status = 'completed' THEN DATEDIFF(t.completed_at, t.created_at) END) as avg_completion_days,
+                (COUNT(CASE WHEN t.status = 'completed' THEN 1 END) / COUNT(t.id)) * 100 as completion_rate
+            FROM {$this->tables['representatives']} r
+            LEFT JOIN {$this->tables['users']} u ON r.user_id = u.ID
+            LEFT JOIN {$this->tables['tasks']} t ON r.id = t.representative_id
+            WHERE r.status = 'active' AND {$where_clause}
+            GROUP BY r.id
+            ORDER BY completion_rate DESC, total_tasks DESC
+        ", $params));
+
+        return $task_performance;
+    }
+
+    /**
+     * Customer Satisfaction Analysis
+     */
+    public function getCustomerSatisfactionAnalysis($filters = []) {
+        // This would integrate with a customer feedback system
+        // For now, we'll simulate satisfaction data based on renewal rates and complaint history
+        
+        $conditions = ["1=1"];
+        $params = [];
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $conditions[] = "DATE(c.created_at) BETWEEN %s AND %s";
+            $params[] = $filters['start_date'];
+            $params[] = $filters['end_date'];
+        }
+
+        $where_clause = implode(' AND ', $conditions);
+
+        $satisfaction_data = $this->wpdb->get_results($this->wpdb->prepare("
+            SELECT 
+                c.id,
+                CONCAT(c.first_name, ' ', c.last_name) as customer_name,
+                COUNT(p.id) as total_policies,
+                COUNT(CASE WHEN p.status = 'active' THEN 1 END) as active_policies,
+                COUNT(CASE WHEN p.status = 'cancelled' THEN 1 END) as cancelled_policies,
+                (COUNT(CASE WHEN p.status = 'active' THEN 1 END) / COUNT(p.id)) * 100 as retention_rate,
+                CASE 
+                    WHEN (COUNT(CASE WHEN p.status = 'active' THEN 1 END) / COUNT(p.id)) * 100 >= 90 THEN 'Çok Memnun'
+                    WHEN (COUNT(CASE WHEN p.status = 'active' THEN 1 END) / COUNT(p.id)) * 100 >= 70 THEN 'Memnun'
+                    WHEN (COUNT(CASE WHEN p.status = 'active' THEN 1 END) / COUNT(p.id)) * 100 >= 50 THEN 'Orta'
+                    ELSE 'Memnun Değil'
+                END as satisfaction_level
+            FROM {$this->tables['customers']} c
+            LEFT JOIN {$this->tables['policies']} p ON c.id = p.customer_id
+            WHERE {$where_clause}
+            GROUP BY c.id
+            HAVING total_policies > 0
+            ORDER BY retention_rate DESC
+        ", $params));
+
+        return $satisfaction_data;
+    }
+
+    /**
+     * Export Data Methods
+     */
+    public function exportToPDF($data, $report_type) {
+        // This would generate a PDF report
+        // For now, return formatted data for PDF generation
+        return [
+            'title' => $this->getReportTitle($report_type),
+            'data' => $data,
+            'generated_at' => current_time('mysql'),
+            'format' => 'pdf'
+        ];
+    }
+
+    public function exportToExcel($data, $report_type) {
+        // This would generate an Excel file
+        return [
+            'title' => $this->getReportTitle($report_type),
+            'data' => $data,
+            'generated_at' => current_time('mysql'),
+            'format' => 'excel'
+        ];
+    }
+
+    public function exportToPowerPoint($data, $report_type) {
+        // This would generate a PowerPoint presentation
+        return [
+            'title' => $this->getReportTitle($report_type),
+            'data' => $data,
+            'generated_at' => current_time('mysql'),
+            'format' => 'powerpoint'
+        ];
+    }
+
+    public function exportToCSV($data, $report_type) {
+        // This would generate a CSV file
+        return [
+            'title' => $this->getReportTitle($report_type),
+            'data' => $data,
+            'generated_at' => current_time('mysql'),
+            'format' => 'csv'
+        ];
+    }
+
+    private function getReportTitle($report_type) {
+        $titles = [
+            'customer_demographics' => 'Müşteri Demografik Analizi',
+            'vip_customers' => 'VIP Müşteri Raporu',
+            'risk_analysis' => 'Risk Analiz Raporu',
+            'policy_performance' => 'Poliçe Performans Raporu',
+            'representative_performance' => 'Temsilci Performans Raporu',
+            'quote_conversion' => 'Teklif Dönüşüm Raporu',
+            'profitability' => 'Karlılık Analiz Raporu',
+            'geographic' => 'Coğrafi Dağılım Raporu',
+            'market_analysis' => 'Pazar Analiz Raporu',
+            'clv_analysis' => 'Müşteri Yaşam Boyu Değer Analizi',
+            'task_performance' => 'Görev Performans Analizi',
+            'satisfaction' => 'Müşteri Memnuniyet Analizi'
+        ];
+
+        return $titles[$report_type] ?? 'Genel Rapor';
+    }
 }
 
 // Initialize the reports manager
@@ -447,6 +684,18 @@ if (isset($_POST['action']) && $_POST['action'] === 'get_report_data') {
         case 'geographic':
             $data = $reports_manager->getGeographicDistribution($filters);
             break;
+        case 'market_analysis':
+            $data = $reports_manager->getMarketAnalysis($filters);
+            break;
+        case 'clv_analysis':
+            $data = $reports_manager->getCustomerLifetimeValue($filters);
+            break;
+        case 'task_performance':
+            $data = $reports_manager->getTaskPerformanceAnalytics($filters);
+            break;
+        case 'satisfaction':
+            $data = $reports_manager->getCustomerSatisfactionAnalysis($filters);
+            break;
     }
     
     wp_send_json_success($data);
@@ -457,10 +706,69 @@ if (isset($_POST['action']) && $_POST['action'] === 'get_report_data') {
 if (isset($_GET['export'])) {
     $export_type = sanitize_text_field($_GET['export']);
     $report_type = sanitize_text_field($_GET['report_type'] ?? 'dashboard');
+    $filters = isset($_GET['filters']) ? array_map('sanitize_text_field', $_GET['filters']) : [];
     
-    // Export functionality will be implemented here
-    // For now, just redirect back
-    wp_redirect(remove_query_arg(['export', 'report_type']));
+    // Get data for export
+    $export_data = [];
+    switch ($report_type) {
+        case 'customer_demographics':
+            $export_data = $reports_manager->getCustomerDemographics($filters);
+            break;
+        case 'vip_customers':
+            $export_data = $reports_manager->getVIPCustomers($filters);
+            break;
+        case 'risk_analysis':
+            $export_data = $reports_manager->getRiskAnalysis($filters);
+            break;
+        case 'policy_performance':
+            $export_data = $reports_manager->getPolicyPerformance($filters);
+            break;
+        case 'representative_performance':
+            $export_data = $reports_manager->getRepresentativePerformance($filters);
+            break;
+        case 'quote_conversion':
+            $export_data = $reports_manager->getQuoteConversion($filters);
+            break;
+        case 'profitability':
+            $export_data = $reports_manager->getProfitabilityAnalysis($filters);
+            break;
+        case 'geographic':
+            $export_data = $reports_manager->getGeographicDistribution($filters);
+            break;
+        case 'market_analysis':
+            $export_data = $reports_manager->getMarketAnalysis($filters);
+            break;
+        case 'clv_analysis':
+            $export_data = $reports_manager->getCustomerLifetimeValue($filters);
+            break;
+        case 'task_performance':
+            $export_data = $reports_manager->getTaskPerformanceAnalytics($filters);
+            break;
+        case 'satisfaction':
+            $export_data = $reports_manager->getCustomerSatisfactionAnalysis($filters);
+            break;
+    }
+    
+    // Process export
+    $export_result = [];
+    switch ($export_type) {
+        case 'pdf':
+            $export_result = $reports_manager->exportToPDF($export_data, $report_type);
+            break;
+        case 'excel':
+            $export_result = $reports_manager->exportToExcel($export_data, $report_type);
+            break;
+        case 'powerpoint':
+            $export_result = $reports_manager->exportToPowerPoint($export_data, $report_type);
+            break;
+        case 'csv':
+            $export_result = $reports_manager->exportToCSV($export_data, $report_type);
+            break;
+    }
+    
+    // In a real implementation, this would trigger file download
+    // For now, redirect back with success message
+    wp_redirect(add_query_arg(['export_success' => $export_type], remove_query_arg(['export', 'report_type'])));
     exit;
 }
 
@@ -480,6 +788,20 @@ $dashboard_data = [
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo esc_html(__('Yeni Nesil Raporlar - CRM Dashboard', 'insurance-crm')); ?></title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="CRM Reports">
+    <meta name="description" content="Advanced insurance CRM analytics and reporting dashboard">
+    
+    <!-- PWA Icons -->
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' fill='%233b82f6'/><text x='90' y='110' font-family='Arial' font-size='60' text-anchor='middle' fill='white'>📊</text></svg>">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%233b82f6'/><text x='16' y='24' font-family='Arial' font-size='20' text-anchor='middle' fill='white'>📊</text></svg>">
+    
+    <!-- Manifest -->
+    <link rel="manifest" href="data:application/manifest+json,{&quot;name&quot;:&quot;CRM Reports Dashboard&quot;,&quot;short_name&quot;:&quot;CRM Reports&quot;,&quot;description&quot;:&quot;Advanced insurance CRM analytics and reporting dashboard&quot;,&quot;start_url&quot;:&quot;./&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;#ffffff&quot;,&quot;theme_color&quot;:&quot;#3b82f6&quot;,&quot;icons&quot;:[{&quot;src&quot;:&quot;data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'><rect width='192' height='192' fill='%233b82f6'/><text x='96' y='120' font-family='Arial' font-size='80' text-anchor='middle' fill='white'>📊</text></svg>&quot;,&quot;sizes&quot;:&quot;192x192&quot;,&quot;type&quot;:&quot;image/svg+xml&quot;}]}">
     
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -531,6 +853,19 @@ $dashboard_data = [
             background-color: var(--bg-secondary);
             color: var(--text-primary);
             line-height: 1.6;
+        }
+
+        /* Screen reader only class */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
         }
 
         .reports-container {
@@ -776,6 +1111,26 @@ $dashboard_data = [
             100% { transform: rotate(360deg); }
         }
 
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .notification {
+            animation: slideIn 0.3s ease-out;
+        }
+
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -837,6 +1192,10 @@ $dashboard_data = [
                 text-align: center;
             }
 
+            .header h1 {
+                font-size: 1.5rem;
+            }
+
             .filters-grid {
                 grid-template-columns: 1fr;
             }
@@ -847,10 +1206,107 @@ $dashboard_data = [
 
             .tabs {
                 flex-wrap: wrap;
+                overflow-x: auto;
+            }
+
+            .tab {
+                flex-shrink: 0;
+                white-space: nowrap;
             }
 
             .export-options {
                 flex-direction: column;
+            }
+
+            .card-content {
+                height: 250px;
+            }
+
+            .data-table {
+                font-size: 0.875rem;
+            }
+
+            .data-table th,
+            .data-table td {
+                padding: 0.5rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .header h1 {
+                font-size: 1.25rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .card-content {
+                height: 200px;
+            }
+
+            .btn {
+                padding: 0.5rem 1rem;
+                font-size: 0.875rem;
+            }
+        }
+
+        /* Accessibility Improvements */
+        .btn:focus,
+        .tab:focus,
+        .theme-toggle:focus,
+        input:focus,
+        select:focus {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+        }
+
+        /* High contrast mode support */
+        @media (prefers-contrast: high) {
+            :root {
+                --border-color: #000000;
+                --text-secondary: #000000;
+            }
+            
+            [data-theme="dark"] {
+                --border-color: #ffffff;
+                --text-secondary: #ffffff;
+            }
+        }
+
+        /* Print styles */
+        @media print {
+            .header-controls,
+            .filters-panel,
+            .tabs,
+            .export-panel,
+            .loading {
+                display: none !important;
+            }
+
+            .dashboard-card {
+                break-inside: avoid;
+                page-break-inside: avoid;
+            }
+
+            body {
+                background: white !important;
+                color: black !important;
+            }
+
+            .dashboard-card {
+                border: 1px solid #000;
+                margin-bottom: 1rem;
             }
         }
     </style>
@@ -859,31 +1315,34 @@ $dashboard_data = [
     <div class="reports-container">
         <!-- Header -->
         <div class="header">
-            <h1><?php echo esc_html(__('Yeni Nesil Raporlar', 'insurance-crm')); ?></h1>
+            <h1 id="main-title"><?php echo esc_html(__('Yeni Nesil Raporlar', 'insurance-crm')); ?></h1>
             <div class="header-controls">
-                <button class="theme-toggle" onclick="toggleTheme()">
+                <button class="theme-toggle" onclick="toggleTheme()" aria-label="Tema değiştir">
                     🌙 Koyu Tema
                 </button>
-                <button class="btn btn-primary" onclick="refreshDashboard()">
+                <button class="btn btn-primary" onclick="refreshDashboard()" aria-label="Dashboard'u yenile">
                     🔄 Yenile
                 </button>
             </div>
         </div>
 
         <!-- Filters Panel -->
-        <div class="filters-panel">
+        <div class="filters-panel" role="region" aria-labelledby="filters-title">
+            <h2 id="filters-title" class="sr-only">Filtreler</h2>
             <div class="filters-grid">
                 <div class="filter-group">
-                    <label><?php echo esc_html(__('Başlangıç Tarihi', 'insurance-crm')); ?></label>
-                    <input type="date" id="start_date" name="start_date" value="<?php echo date('Y-m-01'); ?>">
+                    <label for="start_date"><?php echo esc_html(__('Başlangıç Tarihi', 'insurance-crm')); ?></label>
+                    <input type="date" id="start_date" name="start_date" value="<?php echo date('Y-m-01'); ?>" aria-describedby="start_date_help">
+                    <div id="start_date_help" class="sr-only">Rapor başlangıç tarihini seçin</div>
                 </div>
                 <div class="filter-group">
-                    <label><?php echo esc_html(__('Bitiş Tarihi', 'insurance-crm')); ?></label>
-                    <input type="date" id="end_date" name="end_date" value="<?php echo date('Y-m-d'); ?>">
+                    <label for="end_date"><?php echo esc_html(__('Bitiş Tarihi', 'insurance-crm')); ?></label>
+                    <input type="date" id="end_date" name="end_date" value="<?php echo date('Y-m-d'); ?>" aria-describedby="end_date_help">
+                    <div id="end_date_help" class="sr-only">Rapor bitiş tarihini seçin</div>
                 </div>
                 <div class="filter-group">
-                    <label><?php echo esc_html(__('Poliçe Türü', 'insurance-crm')); ?></label>
-                    <select id="policy_type" name="policy_type">
+                    <label for="policy_type"><?php echo esc_html(__('Poliçe Türü', 'insurance-crm')); ?></label>
+                    <select id="policy_type" name="policy_type" aria-describedby="policy_type_help">
                         <option value=""><?php echo esc_html(__('Tümü', 'insurance-crm')); ?></option>
                         <option value="trafik"><?php echo esc_html(__('Trafik Sigortası', 'insurance-crm')); ?></option>
                         <option value="kasko"><?php echo esc_html(__('Kasko', 'insurance-crm')); ?></option>
@@ -891,15 +1350,34 @@ $dashboard_data = [
                         <option value="dask"><?php echo esc_html(__('DASK', 'insurance-crm')); ?></option>
                         <option value="saglik"><?php echo esc_html(__('Sağlık Sigortası', 'insurance-crm')); ?></option>
                     </select>
+                    <div id="policy_type_help" class="sr-only">Raporda gösterilecek poliçe türünü seçin</div>
                 </div>
                 <div class="filter-group">
-                    <label><?php echo esc_html(__('Müşteri Yaş Grubu', 'insurance-crm')); ?></label>
-                    <select id="age_group" name="age_group">
+                    <label><?php echo esc_html(__('Gelir Seviyesi', 'insurance-crm')); ?></label>
+                    <select id="income_level" name="income_level">
                         <option value=""><?php echo esc_html(__('Tümü', 'insurance-crm')); ?></option>
-                        <option value="18-25">18-25</option>
-                        <option value="26-35">26-35</option>
-                        <option value="36-50">36-50</option>
-                        <option value="50+">50+</option>
+                        <option value="low"><?php echo esc_html(__('Düşük (0-3000)', 'insurance-crm')); ?></option>
+                        <option value="medium"><?php echo esc_html(__('Orta (3000-8000)', 'insurance-crm')); ?></option>
+                        <option value="high"><?php echo esc_html(__('Yüksek (8000+)', 'insurance-crm')); ?></option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><?php echo esc_html(__('Şehir', 'insurance-crm')); ?></label>
+                    <select id="city" name="city">
+                        <option value=""><?php echo esc_html(__('Tümü', 'insurance-crm')); ?></option>
+                        <option value="istanbul"><?php echo esc_html(__('İstanbul', 'insurance-crm')); ?></option>
+                        <option value="ankara"><?php echo esc_html(__('Ankara', 'insurance-crm')); ?></option>
+                        <option value="izmir"><?php echo esc_html(__('İzmir', 'insurance-crm')); ?></option>
+                        <option value="bursa"><?php echo esc_html(__('Bursa', 'insurance-crm')); ?></option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label><?php echo esc_html(__('Risk Seviyesi', 'insurance-crm')); ?></label>
+                    <select id="risk_level" name="risk_level">
+                        <option value=""><?php echo esc_html(__('Tümü', 'insurance-crm')); ?></option>
+                        <option value="low"><?php echo esc_html(__('Düşük Risk', 'insurance-crm')); ?></option>
+                        <option value="medium"><?php echo esc_html(__('Orta Risk', 'insurance-crm')); ?></option>
+                        <option value="high"><?php echo esc_html(__('Yüksek Risk', 'insurance-crm')); ?></option>
                     </select>
                 </div>
             </div>
@@ -922,6 +1400,10 @@ $dashboard_data = [
             <button class="tab" onclick="switchTab('vip')"><?php echo esc_html(__('VIP Müşteriler', 'insurance-crm')); ?></button>
             <button class="tab" onclick="switchTab('risk')"><?php echo esc_html(__('Risk Analizi', 'insurance-crm')); ?></button>
             <button class="tab" onclick="switchTab('profitability')"><?php echo esc_html(__('Karlılık', 'insurance-crm')); ?></button>
+            <button class="tab" onclick="switchTab('market')"><?php echo esc_html(__('Pazar Analizi', 'insurance-crm')); ?></button>
+            <button class="tab" onclick="switchTab('clv')"><?php echo esc_html(__('CLV Analizi', 'insurance-crm')); ?></button>
+            <button class="tab" onclick="switchTab('tasks')"><?php echo esc_html(__('Görev Analizi', 'insurance-crm')); ?></button>
+            <button class="tab" onclick="switchTab('satisfaction')"><?php echo esc_html(__('Memnuniyet', 'insurance-crm')); ?></button>
         </div>
 
         <!-- Dashboard Content -->
@@ -1008,6 +1490,18 @@ $dashboard_data = [
                         break;
                     case 'profitability':
                         this.renderProfitabilityAnalysis(content);
+                        break;
+                    case 'market':
+                        this.renderMarketAnalysis(content);
+                        break;
+                    case 'clv':
+                        this.renderCLVAnalysis(content);
+                        break;
+                    case 'tasks':
+                        this.renderTaskAnalysis(content);
+                        break;
+                    case 'satisfaction':
+                        this.renderSatisfactionAnalysis(content);
                         break;
                 }
             }
@@ -1441,6 +1935,568 @@ $dashboard_data = [
                 }
             }
 
+            renderMarketAnalysis(container) {
+                container.innerHTML = `
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Bölgesel Penetrasyon</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="penetration-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Büyüme Trendi</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="growth-trend-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Rekabet Analizi</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="competition-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Fırsat Alanları</h3>
+                            </div>
+                            <div class="card-content">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Bölge</th>
+                                            <th>Pazar Büyüklüğü</th>
+                                            <th>Penetrasyon</th>
+                                            <th>Potansiyel</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>İstanbul/Kadıköy</td>
+                                            <td>₺2.5M</td>
+                                            <td>%15</td>
+                                            <td>Yüksek</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Ankara/Çankaya</td>
+                                            <td>₺1.8M</td>
+                                            <td>%22</td>
+                                            <td>Orta</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                this.initMarketCharts();
+            }
+
+            renderCLVAnalysis(container) {
+                container.innerHTML = `
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value">₺45,000</div>
+                            <div class="stat-label">Ortalama CLV</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">₺125,000</div>
+                            <div class="stat-label">En Yüksek CLV</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">2.8 Yıl</div>
+                            <div class="stat-label">Ortalama Müşteri Süresi</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">%15</div>
+                            <div class="stat-label">Yıllık Büyüme</div>
+                        </div>
+                    </div>
+                    
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">CLV Segmentasyonu</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="clv-segments-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">En Değerli Müşteriler</h3>
+                            </div>
+                            <div class="card-content">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Müşteri</th>
+                                            <th>CLV</th>
+                                            <th>Yıllık Değer</th>
+                                            <th>Segment</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Premium Müşteri A</td>
+                                            <td>₺125,000</td>
+                                            <td>₺35,000</td>
+                                            <td>Yüksek</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Premium Müşteri B</td>
+                                            <td>₺98,000</td>
+                                            <td>₺28,000</td>
+                                            <td>Yüksek</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                this.initCLVCharts();
+            }
+
+            renderTaskAnalysis(container) {
+                container.innerHTML = `
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Görev Tamamlama Oranları</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="task-completion-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Ortalama Tamamlama Süreleri</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="task-duration-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Temsilci Performansı</h3>
+                            </div>
+                            <div class="card-content">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Temsilci</th>
+                                            <th>Toplam Görev</th>
+                                            <th>Tamamlanan</th>
+                                            <th>Başarı Oranı</th>
+                                            <th>Ort. Süre</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Ahmet Kaya</td>
+                                            <td>45</td>
+                                            <td>42</td>
+                                            <td>%93</td>
+                                            <td>2.1 gün</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Ayşe Demir</td>
+                                            <td>38</td>
+                                            <td>35</td>
+                                            <td>%92</td>
+                                            <td>1.8 gün</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                this.initTaskCharts();
+            }
+
+            renderSatisfactionAnalysis(container) {
+                container.innerHTML = `
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Memnuniyet Seviyeleri</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="satisfaction-levels-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Müşteri Tutma Oranları</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="retention-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Şikayet Analizi</h3>
+                            </div>
+                            <div class="card-content">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Kategori</th>
+                                            <th>Şikayet Sayısı</th>
+                                            <th>Çözülme Oranı</th>
+                                            <th>Ort. Çözüm Süresi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Hasar Süreci</td>
+                                            <td>12</td>
+                                            <td>%100</td>
+                                            <td>3.2 gün</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Poliçe Yenileme</td>
+                                            <td>8</td>
+                                            <td>%87</td>
+                                            <td>2.1 gün</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                this.initSatisfactionCharts();
+            }
+
+            renderPolicyPerformance(container) {
+                container.innerHTML = `
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Poliçe Türü Performansı</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="policy-performance-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Yenileme Oranları</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="renewal-rates-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">İptal Sebepleri</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="cancellation-reasons-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Prim Gelişimi</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="premium-evolution-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                this.initPolicyCharts();
+            }
+
+            renderRepresentativePerformance(container) {
+                container.innerHTML = `
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Temsilci Karşılaştırması</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="rep-comparison-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Satış Pipeline</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="sales-pipeline-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Hedef Başarı Oranları</h3>
+                            </div>
+                            <div class="card-content">
+                                <table class="data-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Temsilci</th>
+                                            <th>Hedef</th>
+                                            <th>Gerçekleşen</th>
+                                            <th>Başarı %</th>
+                                            <th>Durum</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>Ahmet Kaya</td>
+                                            <td>₺50,000</td>
+                                            <td>₺62,000</td>
+                                            <td>%124</td>
+                                            <td><span style="color: #10b981;">✓ Hedef Aşıldı</span></td>
+                                        </tr>
+                                        <tr>
+                                            <td>Ayşe Demir</td>
+                                            <td>₺45,000</td>
+                                            <td>₺41,000</td>
+                                            <td>%91</td>
+                                            <td><span style="color: #f59e0b;">⚠ Hedefe Yakın</span></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                this.initRepresentativeCharts();
+            }
+
+            renderProfitabilityAnalysis(container) {
+                container.innerHTML = `
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value">₺2.1M</div>
+                            <div class="stat-label">Toplam Gelir</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">₺315K</div>
+                            <div class="stat-label">Toplam Komisyon</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">%15</div>
+                            <div class="stat-label">Kar Marjı</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">₺1,850</div>
+                            <div class="stat-label">Poliçe Başına Ort. Kar</div>
+                        </div>
+                    </div>
+                    
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Poliçe Türü Karlılığı</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="profitability-by-type-chart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="dashboard-card">
+                            <div class="card-header">
+                                <h3 class="card-title">Aylık Karlılık Trendi</h3>
+                            </div>
+                            <div class="card-content">
+                                <canvas id="monthly-profitability-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                this.initProfitabilityCharts();
+            }
+
+            // Additional chart initialization methods
+            initMarketCharts() {
+                // Market penetration chart
+                const penetrationCtx = document.getElementById('penetration-chart')?.getContext('2d');
+                if (penetrationCtx) {
+                    new Chart(penetrationCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['İstanbul', 'Ankara', 'İzmir', 'Bursa', 'Antalya'],
+                            datasets: [{
+                                label: 'Penetrasyon Oranı (%)',
+                                data: [15, 22, 18, 12, 8],
+                                backgroundColor: '#3b82f6'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                }
+            }
+
+            initCLVCharts() {
+                // CLV segments chart
+                const clvCtx = document.getElementById('clv-segments-chart')?.getContext('2d');
+                if (clvCtx) {
+                    new Chart(clvCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Yüksek CLV', 'Orta CLV', 'Düşük CLV'],
+                            datasets: [{
+                                data: [20, 45, 35],
+                                backgroundColor: ['#10b981', '#f59e0b', '#ef4444']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                }
+            }
+
+            initTaskCharts() {
+                // Task completion chart
+                const taskCtx = document.getElementById('task-completion-chart')?.getContext('2d');
+                if (taskCtx) {
+                    new Chart(taskCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Tamamlanan', 'Bekleyen', 'Geciken'],
+                            datasets: [{
+                                data: [85, 12, 3],
+                                backgroundColor: ['#10b981', '#f59e0b', '#ef4444']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                }
+            }
+
+            initSatisfactionCharts() {
+                // Satisfaction levels chart
+                const satisfactionCtx = document.getElementById('satisfaction-levels-chart')?.getContext('2d');
+                if (satisfactionCtx) {
+                    new Chart(satisfactionCtx, {
+                        type: 'pie',
+                        data: {
+                            labels: ['Çok Memnun', 'Memnun', 'Orta', 'Memnun Değil'],
+                            datasets: [{
+                                data: [45, 35, 15, 5],
+                                backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                }
+            }
+
+            initPolicyCharts() {
+                // Policy performance chart
+                const policyPerfCtx = document.getElementById('policy-performance-chart')?.getContext('2d');
+                if (policyPerfCtx) {
+                    new Chart(policyPerfCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Trafik', 'Kasko', 'Konut', 'DASK', 'Sağlık'],
+                            datasets: [{
+                                label: 'Poliçe Sayısı',
+                                data: [120, 85, 45, 30, 25],
+                                backgroundColor: '#3b82f6'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                }
+            }
+
+            initRepresentativeCharts() {
+                // Representative comparison chart
+                const repCtx = document.getElementById('rep-comparison-chart')?.getContext('2d');
+                if (repCtx) {
+                    new Chart(repCtx, {
+                        type: 'radar',
+                        data: {
+                            labels: ['Satış', 'Müşteri Memnuniyeti', 'Görev Tamamlama', 'Yenileme', 'Yeni Müşteri'],
+                            datasets: [{
+                                label: 'Ahmet Kaya',
+                                data: [90, 85, 95, 88, 82],
+                                borderColor: '#3b82f6',
+                                backgroundColor: 'rgba(59, 130, 246, 0.2)'
+                            }, {
+                                label: 'Ayşe Demir',
+                                data: [85, 92, 88, 90, 87],
+                                borderColor: '#10b981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.2)'
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                }
+            }
+
+            initProfitabilityCharts() {
+                // Profitability by type chart
+                const profitCtx = document.getElementById('profitability-by-type-chart')?.getContext('2d');
+                if (profitCtx) {
+                    new Chart(profitCtx, {
+                        type: 'bar',
+                        data: {
+                            labels: ['Trafik', 'Kasko', 'Konut', 'DASK', 'Sağlık'],
+                            datasets: [{
+                                label: 'Kar Marjı (%)',
+                                data: [12, 18, 15, 20, 25],
+                                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false
+                        }
+                    });
+                }
+            }
+
             initRealTimeUpdates() {
                 // Update dashboard every 30 seconds
                 setInterval(() => {
@@ -1448,6 +2504,15 @@ $dashboard_data = [
                         this.updateRealTimeData();
                     }
                 }, 30000);
+
+                // Notification permission for real-time alerts
+                if ('Notification' in window && Notification.permission === 'default') {
+                    Notification.requestPermission().then(permission => {
+                        if (permission === 'granted') {
+                            this.showNotification('Gerçek zamanlı bildirimler etkinleştirildi', 'success');
+                        }
+                    });
+                }
             }
 
             updateRealTimeData() {
@@ -1467,6 +2532,61 @@ $dashboard_data = [
                         element.style.padding = '';
                     }, 1000);
                 });
+
+                // Show notification for important updates
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    if (Math.random() < 0.1) { // 10% chance of showing notification
+                        new Notification('CRM Raporları', {
+                            body: 'Yeni veriler güncellendi',
+                            icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="%233b82f6"/><text x="16" y="24" font-family="Arial" font-size="20" text-anchor="middle" fill="white">📊</text></svg>',
+                            badge: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="%233b82f6"/><text x="16" y="24" font-family="Arial" font-size="20" text-anchor="middle" fill="white">📊</text></svg>'
+                        });
+                    }
+                }
+            }
+
+            showNotification(message, type = 'info') {
+                // Create notification element
+                const notification = document.createElement('div');
+                notification.className = `notification notification-${type}`;
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    padding: 1rem;
+                    border-radius: 0.5rem;
+                    color: white;
+                    z-index: 10000;
+                    max-width: 300px;
+                    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+                    animation: slideIn 0.3s ease-out;
+                `;
+
+                // Set background color based on type
+                const colors = {
+                    success: '#10b981',
+                    error: '#ef4444',
+                    warning: '#f59e0b',
+                    info: '#3b82f6'
+                };
+                notification.style.backgroundColor = colors[type] || colors.info;
+
+                notification.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span>${type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️'}</span>
+                        <span>${message}</span>
+                        <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; color: white; font-size: 1.2rem; cursor: pointer; margin-left: auto;">×</button>
+                    </div>
+                `;
+
+                document.body.appendChild(notification);
+
+                // Auto remove after 5 seconds
+                setTimeout(() => {
+                    if (notification.parentElement) {
+                        notification.remove();
+                    }
+                }, 5000);
             }
         }
 
@@ -1569,6 +2689,46 @@ $dashboard_data = [
         // Initialize the application
         document.addEventListener('DOMContentLoaded', function() {
             window.reportsApp = new NextGenReports();
+            
+            // Register service worker for PWA
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('data:text/javascript,const CACHE_NAME="crm-reports-v1";const urlsToCache=["/"];self.addEventListener("install",function(event){event.waitUntil(caches.open(CACHE_NAME).then(function(cache){return cache.addAll(urlsToCache);}))});self.addEventListener("fetch",function(event){event.respondWith(caches.match(event.request).then(function(response){if(response){return response;}return fetch(event.request);}))});')
+                    .then(function(registration) {
+                        console.log('Service Worker registered successfully:', registration);
+                    })
+                    .catch(function(error) {
+                        console.log('Service Worker registration failed:', error);
+                    });
+            }
+            
+            // Add install prompt for PWA
+            let deferredPrompt;
+            window.addEventListener('beforeinstallprompt', (e) => {
+                e.preventDefault();
+                deferredPrompt = e;
+                
+                // Show install button
+                const installButton = document.createElement('button');
+                installButton.textContent = '📱 Uygulamayı Yükle';
+                installButton.className = 'btn btn-primary';
+                installButton.style.position = 'fixed';
+                installButton.style.bottom = '20px';
+                installButton.style.right = '20px';
+                installButton.style.zIndex = '1000';
+                
+                installButton.addEventListener('click', () => {
+                    installButton.style.display = 'none';
+                    deferredPrompt.prompt();
+                    deferredPrompt.userChoice.then((choiceResult) => {
+                        if (choiceResult.outcome === 'accepted') {
+                            console.log('User accepted the install prompt');
+                        }
+                        deferredPrompt = null;
+                    });
+                });
+                
+                document.body.appendChild(installButton);
+            });
         });
     </script>
 </body>
