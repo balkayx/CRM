@@ -147,8 +147,8 @@ function insurance_crm_check_admin_page_access() {
     }
 }
 
-// Hook into admin initialization
-add_action('admin_init', 'insurance_crm_check_admin_page_access', 5);
+// Hook into admin initialization with lower priority to let module restrictions run first
+add_action('admin_init', 'insurance_crm_check_admin_page_access', 10);
 
 /**
  * Filter to restrict data queries
@@ -282,7 +282,7 @@ function insurance_crm_check_user_limit_on_registration($errors, $user_login, $u
 add_filter('registration_errors', 'insurance_crm_check_user_limit_on_registration', 10, 3);
 
 /**
- * Prevent access to restricted content via AJAX
+ * Prevent access to restricted content via AJAX with enhanced error handling
  */
 function insurance_crm_check_ajax_access() {
     // Check if this is a CRM AJAX request
@@ -297,19 +297,80 @@ function insurance_crm_check_ajax_access() {
         $insurance_crm_license_manager->perform_license_check();
     }
     
+    // Check general data access
     if (!insurance_crm_can_access_data()) {
         error_log('[LISANS DEBUG] AJAX access denied for action: ' . $_POST['action']);
+        
+        $license_info = $insurance_crm_license_manager ? $insurance_crm_license_manager->get_license_info() : array();
+        $error_message = 'Lisans süresi dolmuş. Lütfen lisansınızı yenileyin.';
+        
+        // Customize message based on license status
+        if (!empty($license_info)) {
+            if ($license_info['status'] === 'expired' && $license_info['in_grace_period']) {
+                $error_message = sprintf('Lisansınızın süresi dolmuştur. %d gün geçiş süreniz kalmıştır. Lütfen lisansınızı yenileyin.',
+                                       $license_info['grace_days_remaining']);
+            } elseif ($license_info['status'] === 'invalid') {
+                $error_message = 'Lisans anahtarınız geçersiz. Lütfen doğru lisans anahtarını girin.';
+            } elseif ($license_info['status'] === 'inactive') {
+                $error_message = 'Lisansınız etkin değil. Lütfen lisans ayarlarınızı kontrol edin.';
+            }
+        }
+        
         wp_send_json_error(array(
-            'message' => 'Lisans süresi dolmuş. Lütfen lisansınızı yenileyin.',
+            'message' => $error_message,
             'redirect_url' => admin_url('admin.php?page=insurance-crm-license'),
-            'license_error' => true
+            'license_error' => true,
+            'error_type' => 'license_data_access',
+            'license_status' => $license_info['status'] ?? 'unknown'
         ));
+    }
+    
+    // Check module-specific access if module is specified
+    if (isset($_POST['module'])) {
+        $module = sanitize_text_field($_POST['module']);
+        if (!insurance_crm_can_access_module($module)) {
+            error_log('[LISANS DEBUG] AJAX module access denied: ' . $module . ' for action: ' . $_POST['action']);
+            
+            // Get detailed module restriction information
+            global $insurance_crm_module_restrictions;
+            $restriction_details = array();
+            if ($insurance_crm_module_restrictions) {
+                $restriction_details = $insurance_crm_module_restrictions->get_module_restriction_details($module);
+            }
+            
+            wp_send_json_error(array(
+                'message' => !empty($restriction_details['message']) ? $restriction_details['message'] : 
+                           'Bu modüle erişim için lisansınız yeterli değil.',
+                'redirect_url' => admin_url('admin.php?page=insurance-crm-license&restriction=module&module=' . $module),
+                'license_error' => true,
+                'error_type' => 'module_access',
+                'module' => $module,
+                'restriction_details' => $restriction_details
+            ));
+        }
     }
 }
 
-// Hook AJAX requests
+/**
+ * Enhanced AJAX error handler for all CRM requests
+ */
+function insurance_crm_enhanced_ajax_error_handler() {
+    // Hook all AJAX actions early to check access
+    add_action('wp_ajax_nopriv_' . $_POST['action'], 'insurance_crm_check_ajax_access', 1);
+    add_action('wp_ajax_' . $_POST['action'], 'insurance_crm_check_ajax_access', 1);
+}
+
+// Hook AJAX requests with enhanced error handling
 add_action('wp_ajax_nopriv_insurance_crm_check_access', 'insurance_crm_check_ajax_access');
 add_action('wp_ajax_insurance_crm_check_access', 'insurance_crm_check_ajax_access');
+
+// Hook to check AJAX access early for all CRM requests
+add_action('init', function() {
+    if (defined('DOING_AJAX') && DOING_AJAX && isset($_POST['action']) && 
+        strpos($_POST['action'], 'insurance_crm') === 0) {
+        insurance_crm_check_ajax_access();
+    }
+});
 
 /**
  * Modify database queries to return empty results when access is restricted

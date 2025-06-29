@@ -667,12 +667,21 @@ class Insurance_CRM_License_Manager {
 
         $allowed_modules = get_option('insurance_crm_license_modules', array());
         
-        // If no specific modules defined, allow all
+        // If no specific modules defined, allow all modules (legacy compatibility)
+        // This ensures backward compatibility with existing licenses
         if (empty($allowed_modules)) {
+            error_log('[LISANS DEBUG] No specific modules defined in license, allowing access to module: ' . $module);
             return true;
         }
 
-        return in_array($module, $allowed_modules);
+        $is_allowed = in_array($module, $allowed_modules);
+        if (!$is_allowed) {
+            error_log('[LISANS DEBUG] Module not in allowed list: ' . $module . '. Allowed: ' . implode(', ', $allowed_modules));
+        } else {
+            error_log('[LISANS DEBUG] Module access granted: ' . $module);
+        }
+        
+        return $is_allowed;
     }
 
     /**
@@ -702,20 +711,37 @@ class Insurance_CRM_License_Manager {
     }
 
     /**
-     * Display module access restriction notice
+     * Display module access restriction notice with enhanced template
      * 
      * @param string $module Module name
      * @param bool $die Whether to stop execution (default: false)
      */
     public function show_module_restriction_notice($module = '', $die = false) {
-        $message = $this->get_module_restriction_message($module);
+        // Check if we have the custom restriction page template
+        $template_path = plugin_dir_path(dirname(__FILE__)) . 'templates/license-restriction-page.php';
         
-        echo '<div class="notice notice-error">';
-        echo '<p><strong>Erişim Kısıtlı:</strong> ' . esc_html($message) . '</p>';
-        echo '</div>';
+        if (file_exists($template_path) && !empty($module)) {
+            // Store module info for the template
+            $_GET['restriction'] = 'module';
+            $_GET['module'] = $module;
+            
+            // Include the custom template
+            include $template_path;
+        } else {
+            // Fallback to the basic restriction display
+            $message = $this->get_module_restriction_message($module);
+            
+            echo '<div class="wrap">';
+            echo '<div class="notice notice-error license-restriction-notice">';
+            echo '<h2>Modül Erişimi Kısıtlı</h2>';
+            echo '<p><strong>Erişim Kısıtlı:</strong> ' . esc_html($message) . '</p>';
+            echo '<p><a href="' . admin_url('admin.php?page=insurance-crm-license') . '" class="button button-primary">Lisans Yönetimine Git</a></p>';
+            echo '</div>';
+            echo '</div>';
+        }
         
         if ($die) {
-            wp_die($message, 'Erişim Kısıtlı', array('response' => 403));
+            exit;
         }
     }
 
@@ -957,7 +983,7 @@ class Insurance_CRM_License_Manager {
     }
 
     /**
-     * Get JavaScript function for client-side module checking
+     * Get JavaScript function for client-side module checking with enhanced features
      * 
      * @return string JavaScript function
      */
@@ -985,7 +1011,14 @@ class Insurance_CRM_License_Manager {
             };
             
             const moduleName = moduleNames[module] || module;
-            alert('Bu özellik (' + moduleName + ') için lisansınız bulunmamaktadır. Lütfen lisans sağlayıcınızla iletişime geçin.');
+            
+            // Use the enhanced module control system if available
+            if (window.InsuranceCRMLicenseControl) {
+                window.InsuranceCRMLicenseControl.showModuleRestriction(module);
+            } else {
+                // Fallback to simple alert
+                alert('Bu özellik (' + moduleName + ') için lisansınız bulunmamaktadır. Lütfen lisans sağlayıcınızla iletişime geçin.');
+            }
             return false;
         }
     
@@ -995,6 +1028,24 @@ class Insurance_CRM_License_Manager {
             }
             return true;
         }
+        
+        // Enhanced module validation with server-side check
+        function validateModuleAccessAsync(module, callback) {
+            if (window.InsuranceCRMLicenseControl) {
+                window.InsuranceCRMLicenseControl.canAccess(module, callback);
+            } else if (callback) {
+                callback(checkModuleAccess(module));
+            }
+        }
+        
+        // Auto-initialize enhanced controls if available
+        jQuery(document).ready(function() {
+            if (window.InsuranceCRMLicenseControl) {
+                console.log('Enhanced license module control active');
+            } else {
+                console.log('Basic license module control active');
+            }
+        });
         </script>";
     }
 }

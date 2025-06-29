@@ -153,10 +153,20 @@ class Insurance_CRM_Admin {
     public function enqueue_scripts() {
         $screen = get_current_screen();
         if (strpos($screen->id, 'insurance-crm') !== false) {
+            // Main admin script
             wp_enqueue_script(
                 $this->plugin_name,
                 plugin_dir_url(dirname(__FILE__)) . 'admin/js/insurance-crm-admin.js',
                 array('jquery'),
+                $this->version,
+                false
+            );
+            
+            // Enhanced license module control script
+            wp_enqueue_script(
+                $this->plugin_name . '-license-control',
+                plugin_dir_url(dirname(__FILE__)) . 'assets/js/license-module-control.js',
+                array('jquery', $this->plugin_name),
                 $this->version,
                 false
             );
