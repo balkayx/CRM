@@ -71,6 +71,9 @@ class Insurance_CRM_Frontend_Controller {
         
         // ChartJS ve diğer scriptleri ekle
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
+        
+        // CRM favicon'u ekle
+        add_action('wp_head', array($this, 'add_crm_favicon'));
     }
     
     /**
@@ -100,6 +103,19 @@ class Insurance_CRM_Frontend_Controller {
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('insurance_crm_nonce')
             ));
+        }
+    }
+    
+    /**
+     * CRM favicon'u ekle
+     */
+    public function add_crm_favicon() {
+        // Sadece CRM sayfalarında favicon ekle
+        if (is_page('temsilci-paneli') || is_page('boss-panel') || is_page('temsilci-girisi')) {
+            echo "\n    <!-- CRM PWA Icons & Favicon -->\n";
+            echo "    <link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' fill='%233b82f6'/><text x='90' y='110' font-family='Arial' font-size='60' text-anchor='middle' fill='white'>📊</text></svg>\">\n";
+            echo "    <link rel=\"icon\" type=\"image/png\" sizes=\"32x32\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%233b82f6'/><text x='16' y='24' font-family='Arial' font-size='20' text-anchor='middle' fill='white'>📊</text></svg>\">\n";
+            echo "    <link rel=\"icon\" type=\"image/svg+xml\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%233b82f6'/><text x='16' y='24' font-family='Arial' font-size='20' text-anchor='middle' fill='white'>📊</text></svg>\">\n";
         }
     }
     

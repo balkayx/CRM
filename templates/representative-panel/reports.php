@@ -70,6 +70,54 @@ class NextGenReportsManager {
     }
 
     /**
+     * Get profitability analysis
+     */
+    public function getProfitabilityAnalysis($filters = []) {
+        $conditions = ["p.status = 'active'"];
+        $params = [];
+
+        if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
+            $conditions[] = "DATE(p.created_at) BETWEEN %s AND %s";
+            $params[] = $filters['start_date'];
+            $params[] = $filters['end_date'];
+        }
+
+        $where_clause = implode(' AND ', $conditions);
+
+        // Total revenue (premium amounts)
+        $total_revenue = $this->wpdb->get_var($this->wpdb->prepare("
+            SELECT COALESCE(SUM(p.premium_amount), 0)
+            FROM {$this->tables['policies']} p
+            WHERE {$where_clause}
+        ", $params));
+
+        // Total commission (assuming 15% commission rate)
+        $commission_rate = 0.15;
+        $total_commission = $total_revenue * $commission_rate;
+
+        // Policy count for average calculations
+        $policy_count = $this->wpdb->get_var($this->wpdb->prepare("
+            SELECT COUNT(*)
+            FROM {$this->tables['policies']} p
+            WHERE {$where_clause}
+        ", $params));
+
+        // Average profit per policy
+        $avg_profit_per_policy = $policy_count > 0 ? ($total_commission / $policy_count) : 0;
+
+        // Profit margin (commission rate)
+        $profit_margin = $commission_rate * 100;
+
+        return [
+            'total_revenue' => floatval($total_revenue),
+            'total_commission' => floatval($total_commission),
+            'profit_margin' => floatval($profit_margin),
+            'avg_profit_per_policy' => floatval($avg_profit_per_policy),
+            'policy_count' => intval($policy_count)
+        ];
+    }
+
+    /**
      * Get monthly premium trends
      */
     public function getMonthlyPremiumTrends($filters = []) {
@@ -852,7 +900,8 @@ $dashboard_data = [
     'policy_performance' => $reports_manager->getPolicyPerformance(),
     'representative_performance' => $reports_manager->getRepresentativePerformance(),
     'quote_conversion' => $reports_manager->getQuoteConversion(),
-    'monthly_trends' => $reports_manager->getMonthlyPremiumTrends()
+    'monthly_trends' => $reports_manager->getMonthlyPremiumTrends(),
+    'profitability' => $reports_manager->getProfitabilityAnalysis()
 ];
 
 ?>
@@ -2438,22 +2487,28 @@ $dashboard_data = [
             }
 
             renderProfitabilityAnalysis(container) {
+                const profitData = this.data.profitability || {};
+                const totalRevenue = parseFloat(profitData.total_revenue) || 0;
+                const totalCommission = parseFloat(profitData.total_commission) || 0;
+                const profitMargin = parseFloat(profitData.profit_margin) || 0;
+                const avgProfitPerPolicy = parseFloat(profitData.avg_profit_per_policy) || 0;
+                
                 container.innerHTML = `
                     <div class="stats-grid">
                         <div class="stat-card">
-                            <div class="stat-value">₺2.1M</div>
+                            <div class="stat-value">₺${totalRevenue.toLocaleString()}</div>
                             <div class="stat-label">Toplam Gelir</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">₺315K</div>
+                            <div class="stat-value">₺${totalCommission.toLocaleString()}</div>
                             <div class="stat-label">Toplam Komisyon</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">%15</div>
+                            <div class="stat-value">%${profitMargin.toFixed(1)}</div>
                             <div class="stat-label">Kar Marjı</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-value">₺1,850</div>
+                            <div class="stat-value">₺${avgProfitPerPolicy.toLocaleString()}</div>
                             <div class="stat-label">Poliçe Başına Ort. Kar</div>
                         </div>
                     </div>

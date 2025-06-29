@@ -174,6 +174,11 @@ foreach ($active_users as $active_user) {
     <link rel="stylesheet" href="<?php echo plugin_dir_url(__FILE__) . 'loader.css'; ?>">
     <script src="<?php echo plugin_dir_url(__FILE__) . 'loader.js'; ?>"></script>
 
+    <!-- CRM PWA Icons & Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' fill='%233b82f6'/><text x='90' y='110' font-family='Arial' font-size='60' text-anchor='middle' fill='white'>📊</text></svg>">
+    <link rel="icon" type="image/png" sizes="32x32" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%233b82f6'/><text x='16' y='24' font-family='Arial' font-size='20' text-anchor='middle' fill='white'>📊</text></svg>">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%233b82f6'/><text x='16' y='24' font-family='Arial' font-size='20' text-anchor='middle' fill='white'>📊</text></svg>">
+
     <?php wp_head(); ?>
     
     <style>
